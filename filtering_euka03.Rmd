@@ -1,0 +1,420 @@
+---
+title: "Filtering euka03"
+output:
+  html_document: 
+    theme: journal
+    df_print: paged
+  pdf_document: default
+---
+
+# Setting up the R environment
+
+    - `ROBITools` package is used to read result files produced by OBITools.
+    - `ROBITaxonomy` package provides function allowing to query OBITools formated taxonomy.
+
+```{r load_robitools, warning=FALSE}
+if (!require(ROBITools)) {
+
+  # ROBITools are not available on CRAN and have to be installed
+  # from http://git.metabarcoding.org using devtools
+
+  if (!require(devtools)) {
+    install.packages("devtools")
+  }
+
+  devtools::install_git("https://git.metabarcoding.org/obitools/ROBIUtils.git")
+  devtools::install_git("https://git.metabarcoding.org/obitools/ROBITaxonomy.git")
+  devtools::install_git("https://git.metabarcoding.org/obitools/ROBITools.git")
+
+  library(ROBITools)
+}
+
+library(ROBITaxonomy)
+```
+
+-   `tidyverse` provides various method for efficient data manipulation and plotting via `ggplot2`
+
+```{r load_tidyverse, warning=FALSE}
+if (!require(tidyverse)) {
+  install.packages("tidyverse")
+  library(tidyverse)
+}
+```
+
+-   `vegan` is loaded for its `decostand` function
+
+```{r load_vegan, warning=FALSE}
+if (!require(vegan)) {
+  install.packages("vegan")
+  library(vegan)
+}
+```
+
+-   `ade4` provides multivariate analysis functions
+
+```{r load_ade4, warning=FALSE}
+if (!require(ade4)) {
+  install.packages("ade4")
+  library(ade4)
+}
+```
+
+```{r load_utils, message=FALSE, warning=FALSE, include=FALSE}
+source("utils._func.R")
+```
+
+# Loading an preparing of the dataset
+
+## Loading of the OBITools formated NCBI taxonomy
+
+```{r}
+ncbi <- read.taxonomy("embl-140/ncbi20190930")
+```
+
+## Loading the raw data after obitools processing
+
+
+```{r}
+euka03_raw = import.metabarcoding.data("euka03/euka03.ecotag.tab")
+```
+
+## Extract the obiclean data from the MOTU description.
+
+```{r}
+euka03_raw.clean <- extracts.obiclean(euka03_raw)
+rm(euka03_raw)
+```
+
+## Affects categories to the samples among
+
+-   sample : PCRs corresponding to samples
+-   positive_ctrl : PCRs corresponding to the mock community of 10 algaes.
+-   negative_ctrl : PCR negative controls
+-   blank : sequencing negative controls
+
+```{r}
+sample_names <- rownames(euka03_raw.clean)
+positive_control <- grep(pattern = "^CPOS[0-9]+-", x = sample_names)
+negative_control <- grep(pattern = "^CNEG[0-9]+-", x = sample_names)
+control <- grep(pattern = "^C[0-9]+-", x = sample_names)
+blanks <- grep(pattern = "^emptyDNA[0-9]+-", x = sample_names)
+category <- factor(rep("sample", nrow(euka03_raw.clean)),
+  levels = c("sample", "positive_ctrl", "negative_ctrl", "blank","control")
+)
+category[positive_control] <- "positive_ctrl"
+category[negative_control] <- "negative_ctrl"
+category[blanks] <- "blank"
+category[control] <- "control"
+
+euka03_raw.clean@samples$category <- category
+```
+
+## Adds a sample id that corresponds to the PCR id (sample_name column) without the replica id
+
+```{r}
+sampleid = sapply(sample_names, function(x) strsplit(x,split = "_")[[1]][1])
+sampleid = str_replace(sampleid,"-2016","")
+euka03_raw.clean@samples$sampleid <- factor(sampleid)
+```
+
+## Adds information about sites
+
+```{r}
+site <- factor(category, levels = c(
+  levels(category),
+  "ANT", "CHA", "LOR", "RIS", "VCH"
+))
+
+for (s in c("ANT", "CHA", "LOR", "RIS", "VCH")) {
+  p <- grep(pattern = paste0("^", s, "[0-9]+-"), x = sample_names)
+  site[p] <- s
+}
+
+euka03_raw.clean@samples$site <- site
+```
+
+Plots for every PCR its diversity as a function of read counts
+
+```{r}
+euka03_raw.clean %>% plot_reads_x_motus(q = 1, threshold = 0.00, limit = 500) +
+geom_hline(yintercept = 4)
+```
+
+
+## Filters out sequences that are not considered as true sequences by obiclean
+
+```{r}
+# Sets the count of not true sequences to 0.
+euka03_raw.center <- euka03_raw.clean
+euka03_raw.center@reads[euka03_raw.clean$obiclean_status != "h"] <- 0
+
+# Removes MOTUs occurring in any samples
+euka03_raw.center <- euka03_raw.center[, colSums(euka03_raw.center@reads) > 0]
+
+# Removes empty samples
+euka03_raw.center <- euka03_raw.center[which(rowSums(euka03_raw.center@reads) > 0), ]
+
+# Erases the original large data set
+rm(euka03_raw.clean)
+```
+
+
+## Adds a taxo_group column to the MOTU description with three categories :
+- eukaryota
+- Others
+- Not annoted
+   
+The `Not annoted` category corresponds to MOTU without similarity with the reference database.
+The 'Others" category corresponds to non *eukaryota* MOTUs.
+
+```{r}
+motus_cat <- rep("Others",ncol(euka03_raw.center))
+
+eukaryota.taxid <- ecofind(ncbi,"^eukaryota$")
+is_eukaryota <- is.subcladeof(ncbi,euka03_raw.center@motus$taxid, eukaryota.taxid)
+motus_cat[is_eukaryota] <- "Eukaryota"
+motus_cat[euka03_raw.center@motus$taxid == 1] <- "Not annoted"
+
+euka03_raw.center@motus$taxo_group <- factor(motus_cat, 
+                                             levels = c("Eukaryota","Others","Not annoted"))
+```
+
+Plot for each PCR then hill's number diversity for $q=1$ as a function of read numbers associated to that PCR.
+
+The theoritical Hill's number for positive controle is $^1D=4$. 
+
+```{r}
+euka03_raw.center %>% plot_reads_x_motus(q=1,threshold = 0.00,limit = 500) + 
+                      geom_hline(yintercept = 4)
+```
+
+## Look for contaminents
+
+### Look for sequences present in negative PCR controles and samples
+
+```{r}
+euka03_in_negative_ctrls <- which(
+                             colSums(
+                               euka03_raw.center@reads[
+                                 euka03_raw.center@samples$category == "negative_ctrl",
+                                 ]) > 0)
+
+maxneg <- aggregate(euka03_raw.center[,euka03_in_negative_ctrls],
+               MARGIN = 1, 
+               by = list(category = euka03_raw.center@samples$category),
+               FUN = max
+              )
+neg_ctrls <- data.frame(
+  sample   = colSums(euka03_raw.center@reads[euka03_raw.center@samples$category == "sample",
+                                             euka03_in_negative_ctrls]),
+  positive = colSums(euka03_raw.center@reads[euka03_raw.center@samples$category == "positive_ctrl",
+                                             euka03_in_negative_ctrls]),
+  negative = colSums(euka03_raw.center@reads[euka03_raw.center@samples$category == "negative_ctrl",
+                                             euka03_in_negative_ctrls]),
+  max_in   = rownames(maxneg@reads)[apply(maxneg@reads,2,which.max)],
+  idx      = euka03_in_negative_ctrls)
+
+neg_ctrls
+```
+
+```{r}
+neg_ctrls %>% ggplot(aes(x = sample, y = negative, col = max_in)) +
+  geom_point() +
+  scale_x_log10() +
+  scale_y_log10() +
+  geom_abline(slope = 1, intercept = 0, col = "red")
+```
+
+#### Remove a potentiol contaminent from negative controle
+
+Each MOTU more abundant in the negative controls than in the samples is removed.
+
+```{r}
+
+euka03_raw.center <- euka03_raw.center[,-(neg_ctrls[neg_ctrls$max_in == "negative_ctrl","idx"])]
+```
+
+
+Clean the dataset by removing every empty PCR
+
+```{r}
+euka03_raw.center <- euka03_raw.center[which(rowSums(euka03_raw.center@reads) > 0),]
+dim(euka03_raw.center)
+```
+
+## Number of replicate per PCR category
+
+Counts how many PCR replicates are conserved at that level of the analysis.
+
+```{r}
+n_pcr = table(euka03_raw.center@samples$sampleid)[as.character(euka03_raw.center@samples$sampleid)]
+table(n_pcr,euka03_raw.center@samples$site)
+```
+
+
+The sample column is equal to zero because sample category is actually distributed among sites At that level every blanks are empty and no more PCRs corresponding to them are conserved
+
+## Filters out PCR replicats with too few reads
+
+Plots for every PCR its diversity as a function of read counts
+
+```{r}
+euka03_raw.center %>% plot_reads_x_motus(q=1,threshold = 0.00,limit = 1000) + geom_hline(yintercept = 4)
+```
+Keeps only PCRs with more than 1000 reads. MOTUs having no more representants are removed
+
+```{r}
+euka03_raw.center <- euka03_raw.center[rowSums(euka03_raw.center@reads) >=1000,]
+euka03_raw.center <- euka03_raw.center[,colSums(euka03_raw.center@reads) >0]
+```
+
+Keeps only PCRs having a diversity greater than 10. MOTUs having no more representants are removed
+
+```{r}
+euka03_raw.center <- euka03_raw.center[apply(euka03_raw.center@reads,1,D_q) >= 10,]
+euka03_raw.center <- euka03_raw.center[,colSums(euka03_raw.center@reads) >0]
+```
+
+## Checks similarity between PCR replicates
+
+
+```{r}
+euka03.keep1 = tag_bad_pcr(euka03_raw.center@samples$sampleid,
+                           counts = euka03_raw.center@reads
+                          )
+```
+
+
+
+
+
+
+```{r}
+euka03_by_taxo_group <- aggregate(euka03_raw.center,MARGIN = 2,by = list(euka03_raw.center@motus$taxo_group),FUN = sum)
+```
+
+
+
+```{r}
+data = data.frame(x = euka03.keep1$distance,
+                  y = 1 - euka03_by_taxo_group@reads[,1]/rowSums(euka03_by_taxo_group@reads),
+                  col=euka03_raw.center@samples$category,
+                  pch=as.character(table(euka03_raw.center@samples$sampleid)[as.character(euka03_raw.center@samples$sampleid)]),
+                  ok = table(euka03_raw.center@samples$sampleid)[as.character(euka03_raw.center@samples$sampleid)] > 1 &
+                              euka03_raw.center@samples$category == "sample")
+
+ggplot(data[table(euka03_raw.center@samples$sampleid)[as.character(euka03_raw.center@samples$sampleid)] > 1,],aes(x=y,y=x,col=col)) +
+  geom_point() +
+  scale_x_log10() +
+  scale_y_log10() +
+  ylab("Distance among PCR replicates") +
+  xlab("Fraction of non eukaryota reads") +
+  stat_smooth(data = data[data$ok,],col="black",method="lm",se = FALSE) +
+  theme(legend.title = element_blank())
+```
+
+
+
+
+```{r}
+ok <- table(euka03_raw.center@samples$sampleid)[as.character(euka03_raw.center@samples$sampleid)] > 1 &
+      euka03_raw.center@samples$category == "sample" & data$x > 0 & data$y > 0
+
+l <- lm(log(data$x[ok]) ~ log(data$y[ok]),na.action = na.omit)
+summary(l)
+cor(log(data$x[ok]) , log(data$y[ok]),use = "complete.obs")^2
+```
+
+More eukaryota reads in the PCR closer are the replicates. The eukaryota amount of DNA seems to be the limitant factor.
+
+
+## Preprares the final data set for ecological analysis
+
+We now just focus on the target group and remove every control PCRs
+
+```{r warning=FALSE}
+euka03.eukaryota <- euka03_raw.center[,euka03_raw.center@motus$taxo_group == "Eukaryota"]
+euka03.eukaryota <- euka03.eukaryota[which(rowSums(euka03.eukaryota@reads)>0),]
+euka03.eukaryota <- euka03.eukaryota[which(euka03.eukaryota@samples$category=="sample"),]
+euka03.eukaryota <- euka03.eukaryota[,which(colSums(euka03.eukaryota@reads)>0)]
+```
+
+and we merge the sites metadata
+
+```{r warning=FALSE}
+orchamp_env <- read.csv("orchamp_env.csv",header = TRUE)
+sample_descr <- read.csv2("labels_metabar_trie.csv",header = TRUE)
+code_plot <- paste(sample_descr$Site_short,sample_descr$Altitude,sample_descr$Horizon,sep = "_")
+sample_descr$Code_plot <- code_plot
+left_join(sample_descr,orchamp_env) %>% right_join(euka03.eukaryota@samples %>% mutate(sampleid=str_replace(sampleid,"-2016","")),by = c(EXTRACTION.CODE="sampleid")) -> samples
+rownames(samples) <- as.character(samples$sample)  
+euka03.eukaryota@samples <- samples
+
+euka03.eukaryota@motus$class <- taxonatrank(ncbi,euka03.eukaryota@motus$taxid,"class",name=TRUE)
+```
+
+
+```{r warning=FALSE}
+table(table(euka03.eukaryota@samples$EXTRACTION.CODE)[as.character(euka03.eukaryota@samples$EXTRACTION.CODE)],euka03.eukaryota@samples$Site_short)
+```
+
+```{r}
+euka03.eukaryota %>% plot_reads_x_motus(q=1,threshold = 0.00) + geom_hline(yintercept = 4)
+```
+
+Annotates sequences with useful taxonomy groups
+
+- *Fungi* 
+- *Chlorophyta* (not belonging *Chlorophyceae* or *Trebouxiophyceae*)
+  + *Chlorophyceae*
+  + *Trebouxiophyceae*
+- *Streptophyta* (Vascular plants)
+
+```{r}
+motus_cat <- rep("Others Eukaryota",ncol(euka03.eukaryota))
+
+chlorophyta.taxid <- ecofind(ncbi,"^Chlorophyta$")
+streptophyta.taxid <- ecofind(ncbi,"^Streptophyta$")
+chlorophyceae.taxid <- ecofind(ncbi,"^Chlorophyceae$")
+trebouxiophyceae.taxid <- ecofind(ncbi,"^Trebouxiophyceae$")
+fungi.taxid <- ecofind(ncbi,"^Fungi$")
+
+
+motus_cat[is.subcladeof(ncbi,euka03.eukaryota@motus$taxid, fungi.taxid)] <- "Fungi"
+motus_cat[is.subcladeof(ncbi,euka03.eukaryota@motus$taxid, streptophyta.taxid)] <- "Streptophyta"
+motus_cat[is.subcladeof(ncbi,euka03.eukaryota@motus$taxid, chlorophyta.taxid)] <- "Other Chlorophyta"
+motus_cat[is.subcladeof(ncbi,euka03.eukaryota@motus$taxid, chlorophyceae.taxid)] <- "Chlorophyceae"
+motus_cat[is.subcladeof(ncbi,euka03.eukaryota@motus$taxid, trebouxiophyceae.taxid)] <- "Trebouxiophyceae"
+
+euka03.eukaryota@motus$taxo_group <- factor(motus_cat, 
+                                             levels = c("Fungi","Streptophyta",
+                                                        "Chlorophyceae","Trebouxiophyceae",
+                                                        "Other Chlorophyta","Others Eukaryota"))
+
+euka03_by_taxo_group <- aggregate(euka03.eukaryota,MARGIN = 2,by = list(euka03.eukaryota@motus$taxo_group),FUN = sum)
+```
+
+```{r}
+algae_ratio <- apply(euka03_by_taxo_group@reads, MARGIN = 1, function(x) sum(x[3:5])/sum(x))
+hist(algae_ratio[algae_ratio > 0],breaks = 20, xlab = "Ratio of Algae reads ", main = "Algae occurrences")
+```
+Precomputes the part of the taxonomic group into each PCR
+
+```{r}
+euka03.eukaryota@samples$fungi_part <-  apply(euka03_by_taxo_group@reads, MARGIN = 1, function(x) x[1]/sum(x))
+euka03.eukaryota@samples$streptophyta_part <-  apply(euka03_by_taxo_group@reads, MARGIN = 1, function(x) x[2]/sum(x))
+euka03.eukaryota@samples$chlorophyta_part <- algae_ratio
+euka03.eukaryota@samples$chlorophyceae_part <- apply(euka03_by_taxo_group@reads, MARGIN = 1, function(x) x[4]/sum(x))
+euka03.eukaryota@samples$trebouxiophyceae_part <- apply(euka03_by_taxo_group@reads, MARGIN = 1, function(x) x[5]/sum(x))
+```
+
+
+
+```{r}
+write.csv2(euka03.eukaryota@reads,file   = "cleaned_datasets/euka03.cleanned.reads.csv")
+write.csv2(euka03.eukaryota@motus,file   = "cleaned_datasets/euka03.cleanned.motus.csv")
+write.csv2(euka03.eukaryota@samples,file = "cleaned_datasets/euka03.cleanned.samples.csv")
+```
+
+
+
