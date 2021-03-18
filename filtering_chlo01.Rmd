@@ -1,0 +1,422 @@
+---
+title: "Filtering Chlo01"
+output:
+  html_document: 
+    theme: journal
+  pdf_document: default
+---
+
+# Setting up the R environment
+
+    - `ROBITools` package is used to read result files produced by OBITools.
+    - `ROBITaxonomy` package provides function allowing to query OBITools formated taxonomy.
+
+```{r load_robitools, warning=FALSE}
+if (!require(ROBITools)) {
+
+  # ROBITools are not available on CRAN and have to be installed
+  # from http://git.metabarcoding.org using devtools
+
+  if (!require(devtools)) {
+    install.packages("devtools")
+  }
+
+  devtools::install_git("https://git.metabarcoding.org/obitools/ROBIUtils.git")
+  devtools::install_git("https://git.metabarcoding.org/obitools/ROBITaxonomy.git")
+  devtools::install_git("https://git.metabarcoding.org/obitools/ROBITools.git")
+
+  library(ROBITools)
+}
+
+library(ROBITaxonomy)
+```
+
+-   `tidyverse` provides various method for efficient data manipulation and plotting via `ggplot2`
+
+```{r load_tidyverse, warning=FALSE}
+if (!require(tidyverse)) {
+  install.packages("tidyverse")
+  library(tidyverse)
+}
+```
+
+-   `vegan` is loaded for its `decostand` function
+
+```{r load_vegan, warning=FALSE}
+if (!require(vegan)) {
+  install.packages("vegan")
+  library(vegan)
+}
+```
+
+-   `ade4` provides multivariate analysis functions
+
+```{r load_ade4, warning=FALSE}
+if (!require(ade4)) {
+  install.packages("ade4")
+  library(ade4)
+}
+```
+
+```{r load_utils, message=FALSE, warning=FALSE, include=FALSE}
+source("utils._func.R")
+```
+
+# Loading an preparing of the dataset
+
+## Loading of the OBITools formated NCBI taxonomy
+
+```{r}
+ncbi <- read.taxonomy("embl-140/ncbi20190930")
+```
+
+## Loading the raw data after obitools processing
+
+```{r}
+chlo01_raw <- import.metabarcoding.data("chlo01/chlo01.ecotag.tab")
+```
+
+## Extract the obiclean data from the MOTU description.
+
+```{r}
+chlo01_raw.clean <- extracts.obiclean(chlo01_raw)
+rm(chlo01_raw)
+```
+
+## Affects catetories to the samples among
+
+-   sample : PCRs corresponding to samples
+-   positive_ctrl : PCRs corresponding to the mock community of 10 algaes.
+-   negative_ctrl : PCR negative controls
+-   blank : sequencing negative controls
+
+```{r}
+sample_names <- rownames(chlo01_raw.clean)
+positive_control <- grep(pattern = "^CP[0-9]{2}_", x = sample_names)
+negative_control <- grep(pattern = "^C[0-9]+_", x = sample_names)
+blanks <- grep(pattern = "^BLK[0-9]{2}_", x = sample_names)
+category <- factor(rep("sample", nrow(chlo01_raw.clean)),
+  levels = c("sample", "positive_ctrl", "negative_ctrl", "blank")
+)
+category[positive_control] <- "positive_ctrl"
+category[negative_control] <- "negative_ctrl"
+category[blanks] <- "blank"
+
+chlo01_raw.clean@samples$category <- category
+```
+
+## Adds a sample id that corresponds to the PCR id (sample_name column) without the replica id
+
+```{r}
+sampleid <- sapply(sample_names, function(x) strsplit(x, split = "_")[[1]][1])
+chlo01_raw.clean@samples$sampleid <- factor(sampleid)
+```
+
+## Adds information about sites
+
+```{r}
+site <- factor(category, levels = c(
+  levels(category),
+  "ANT", "CHA", "LOR", "RIS", "VCH"
+))
+
+for (s in c("ANT", "CHA", "LOR", "RIS", "VCH")) {
+  p <- grep(pattern = paste0("^", s, "[0-9]+_"), x = sample_names)
+  site[p] <- s
+}
+
+chlo01_raw.clean@samples$site <- site
+```
+
+Plots for every PCR its diversity as a function of read counts
+
+```{r}
+chlo01_raw.clean %>% plot_reads_x_motus(q = 1, threshold = 0.00, limit = 500) +
+  geom_hline(yintercept = 4)
+```
+
+## Filters out sequences that are not considered as true sequences by obiclean
+
+```{r}
+# Sets the count of not true sequences to 0.
+chlo01_raw.center <- chlo01_raw.clean
+chlo01_raw.center@reads[chlo01_raw.clean$obiclean_status != "h"] <- 0
+
+# Removes MOTUs occurring in any samples
+chlo01_raw.center <- chlo01_raw.center[, colSums(chlo01_raw.center@reads) > 0]
+
+# Removes empty samples
+chlo01_raw.center <- chlo01_raw.center[which(rowSums(chlo01_raw.center@reads) > 0), ]
+
+# Erases the original large data set
+rm(chlo01_raw.clean)
+```
+
+## Adds a taxo_group column to the MOTU description with three categories :
+
+-   Chlorophyta
+-   Others
+-   Not annoted
+
+The `Not annoted` category corresponds to MOTU without similarity with the reference database. The 'Others" category corresponds to non *Chlorophyta* MOTUs.
+
+```{r}
+motus_cat <- rep("Others", ncol(chlo01_raw.center))
+
+chlorophita.taxid <- ecofind(ncbi, "^chlorophyta$")
+is_chlorophyta <- is.subcladeof(ncbi, chlo01_raw.center@motus$taxid, chlorophita.taxid)
+motus_cat[is_chlorophyta] <- "Chlorophyta"
+motus_cat[chlo01_raw.center@motus$taxid == 1] <- "Not annoted"
+
+chlo01_raw.center@motus$taxo_group <- factor(motus_cat,
+  levels = c("Chlorophyta", "Others", "Not annoted")
+)
+```
+
+Plot for each PCR then hill's number diversity for $q=1$ as a function of read numbers associated to that PCR.
+
+The theoritical Hill's number for positive controle is $^1D=4$.
+
+```{r}
+chlo01_raw.center %>% plot_reads_x_motus(q = 1, threshold = 0.00, limit = 500) +
+  geom_hline(yintercept = 4)
+```
+
+## Look for contaminents
+
+### Look for sequences present in positive controles and samples
+
+The table resumes for each sequence occurring in positive controls how many times they occure in samples, positive controles and negative controles
+
+```{r}
+chlo01_in_positive_ctrls <- which(
+  colSums(
+    chlo01_raw.center@reads[
+      chlo01_raw.center@samples$category == "positive_ctrl",
+    ]
+  ) > 0
+)
+
+data.frame(
+  sample = colSums(chlo01_raw.center@reads[chlo01_raw.center@samples$category == "sample", chlo01_in_positive_ctrls]),
+
+  positive = colSums(chlo01_raw.center@reads[
+    chlo01_raw.center@samples$category == "positive_ctrl",
+    chlo01_in_positive_ctrls
+  ]),
+
+  negative = colSums(chlo01_raw.center@reads[
+    chlo01_raw.center@samples$category == "negative_ctrl",
+    chlo01_in_positive_ctrls
+  ])
+)
+```
+
+#### Examines the distribution of MOTU HISEQ:290:CCU08ANXX:1:1101:6594:2283_CONS_SUB_SUB
+
+```{r}
+cont <- "HISEQ:290:CCU08ANXX:1:1101:6594:2283_CONS_SUB_SUB"
+data.frame(
+  motus = chlo01_raw.center@reads[, cont],
+  site = chlo01_raw.center@samples$site
+) %>%
+  ggplot(aes(x = site, y = motus)) +
+  geom_boxplot() +
+  scale_y_sqrt()
+```
+
+```{r}
+tapply(chlo01_raw.center@reads[, cont], chlo01_raw.center@samples$site, max, na.rm = TRUE)
+```
+
+#### Examines the distribution of MOTU HISEQ:290:CCU08ANXX:1:1101:8789:3615_CONS_SUB_SUB_CMP
+
+```{r}
+cont <- "HISEQ:290:CCU08ANXX:1:1101:8789:3615_CONS_SUB_SUB_CMP"
+data.frame(
+  motus = chlo01_raw.center@reads[, cont],
+  site = chlo01_raw.center@samples$site
+) %>%
+  ggplot(aes(x = site, y = motus)) +
+  geom_boxplot() +
+  scale_y_sqrt()
+```
+
+```{r}
+tapply(chlo01_raw.center@reads[, cont], chlo01_raw.center@samples$site, max, na.rm = TRUE)
+```
+
+### Look for sequences present in negative PCR controles and samples
+
+```{r}
+chlo01_in_negative_ctrls <- which(
+  colSums(
+    chlo01_raw.center@reads[
+      chlo01_raw.center@samples$category == "negative_ctrl",
+    ]
+  ) > 0
+)
+
+maxneg <- aggregate(chlo01_raw.center[, chlo01_in_negative_ctrls],
+  MARGIN = 1,
+  by = list(category = chlo01_raw.center@samples$category),
+  FUN = max
+)
+neg_ctrls <- data.frame(
+  sample = colSums(chlo01_raw.center@reads[
+    chlo01_raw.center@samples$category == "sample",
+    chlo01_in_negative_ctrls
+  ]),
+  positive = colSums(chlo01_raw.center@reads[
+    chlo01_raw.center@samples$category == "positive_ctrl",
+    chlo01_in_negative_ctrls
+  ]),
+  negative = colSums(chlo01_raw.center@reads[
+    chlo01_raw.center@samples$category == "negative_ctrl",
+    chlo01_in_negative_ctrls
+  ]),
+  max_in = levels(maxneg@samples$category)[apply(maxneg@reads, 2, which.max)],
+  idx = chlo01_in_negative_ctrls
+)
+
+neg_ctrls
+```
+
+```{r}
+neg_ctrls %>% ggplot(aes(x = sample, y = negative, col = max_in)) +
+  geom_point() +
+  scale_x_log10() +
+  scale_y_log10() +
+  geom_abline(slope = 1, intercept = 0, col = "red")
+```
+
+#### Remove a potentiol contaminent from negative controle
+
+Each MOTU more abundant in the negative controls than in the samples is removed.
+
+```{r}
+chlo01_raw.center <- chlo01_raw.center[, -(neg_ctrls[neg_ctrls$max_in == "negative_ctrl", "idx"])]
+```
+
+Clean the dataset by removing every empty PCR
+
+```{r}
+chlo01_raw.center <- chlo01_raw.center[which(rowSums(chlo01_raw.center@reads) > 0), ]
+dim(chlo01_raw.center)
+```
+
+## Number of replicate per PCR category
+
+Counts how many PCR replicates are conserved at that level of the analysis.
+
+```{r}
+n_pcr <- table(chlo01_raw.center@samples$sampleid)[as.character(chlo01_raw.center@samples$sampleid)]
+table(n_pcr, chlo01_raw.center@samples$site)
+```
+
+The sample column is equal to zero because sample category is actually distributed among sites At that level every blanks are empty and no more PCRs corresponding to them are conserved
+
+## Filters out PCR replicats with too few reads
+
+Plots for every PCR its diversity as a function of read counts
+
+```{r}
+chlo01_raw.center %>% plot_reads_x_motus(q = 1, threshold = 0.00, limit = 200) + geom_hline(yintercept = 4)
+```
+
+Keeps only PCRs with more than 200 reads. MOTUs having no more representants are removed
+
+```{r}
+chlo01_raw.center <- chlo01_raw.center[rowSums(chlo01_raw.center@reads) >= 200, ]
+chlo01_raw.center <- chlo01_raw.center[, colSums(chlo01_raw.center@reads) > 0]
+```
+
+## Checks similarity between PCR replicates
+
+```{r}
+chlo01.keep1 <- tag_bad_pcr(chlo01_raw.center@samples$sampleid,
+  counts = chlo01_raw.center@reads
+)
+```
+
+The dissimilarity distribution of PCR replicates is bimodal. Low dissimilarity replicates correspond to positive controls, the second mode corresponds to samples.
+
+```{r}
+chlo01_by_taxo_group <- aggregate(chlo01_raw.center, MARGIN = 2, by = list(chlo01_raw.center@motus$taxo_group), FUN = sum)
+chlo01_raw.center@samples$chlorophyta_part <- chlo01_by_taxo_group@reads[, 1] / rowSums(chlo01_by_taxo_group@reads)
+chlo01_raw.center@samples$dist_barycenter <- chlo01.keep1$distance
+```
+
+The lower replicability of the samples is be explained by a very low amount of DNA as shown in the following plot.
+
+```{r}
+data <- data.frame(
+  x = chlo01.keep1$distance,
+  y = 1 - chlo01_by_taxo_group@reads[, 1] / rowSums(chlo01_by_taxo_group@reads),
+  col = chlo01_raw.center@samples$category,
+  pch = as.character(table(chlo01_raw.center@samples$sampleid)[as.character(chlo01_raw.center@samples$sampleid)]),
+  ok = table(chlo01_raw.center@samples$sampleid)[as.character(chlo01_raw.center@samples$sampleid)] > 1 &
+    chlo01_raw.center@samples$category == "sample"
+)
+
+ggplot(data[table(chlo01_raw.center@samples$sampleid)[as.character(chlo01_raw.center@samples$sampleid)] > 1, ], aes(x = y, y = x, col = col)) +
+  geom_point() +
+  scale_y_log10() +
+  ylab("Distance among PCR replicates") +
+  xlab("Fraction of non Chlorophyta reads") +
+  stat_smooth(data = data[data$ok, ], col = "black", method = "lm", se = FALSE) +
+  theme(legend.title = element_blank())
+```
+
+Estimates the linear model for the sample PCRs.
+
+```{r}
+ok <- table(chlo01_raw.center@samples$sampleid)[as.character(chlo01_raw.center@samples$sampleid)] > 1 &
+  chlo01_raw.center@samples$category == "sample" & data$x > 0 & data$y > 0
+
+l <- lm(log(data$x[ok]) ~ data$y[ok], na.action = na.omit)
+summary(l)
+cor(log(data$x[ok]), data$y[ok], use = "complete.obs")^2
+```
+
+More Chlorophyta reads in the PCR closer are the replicates. The Chlorophyta amount of DNA seems to be the limitant factor.
+
+## Preprares the final data set for ecological analysis
+
+We now just focus on the target group and remove every control PCRs
+
+```{r warning=FALSE}
+chlo01.chlorophyta <- chlo01_raw.center[, chlo01_raw.center@motus$taxo_group == "Chlorophyta"]
+chlo01.chlorophyta <- chlo01.chlorophyta[which(rowSums(chlo01.chlorophyta@reads) > 0), ]
+chlo01.chlorophyta <- chlo01.chlorophyta[which(chlo01.chlorophyta@samples$category == "sample"), ]
+chlo01.chlorophyta <- chlo01.chlorophyta[, which(colSums(chlo01.chlorophyta@reads) > 0)]
+```
+
+and we merge the sites metadata
+
+```{r warning=FALSE}
+orchamp_env <- read.csv("orchamp_env.csv", header = TRUE)
+sample_descr <- read.csv2("labels_metabar_trie.csv", header = TRUE)
+code_plot <- paste(sample_descr$Site_short, sample_descr$Altitude, sample_descr$Horizon, sep = "_")
+sample_descr$Code_plot <- code_plot
+left_join(sample_descr, orchamp_env) %>% right_join(chlo01.chlorophyta@samples, by = c(EXTRACTION.CODE = "sampleid")) -> samples
+rownames(samples) <- as.character(samples$sample)
+chlo01.chlorophyta@samples <- samples
+
+chlo01.chlorophyta@motus$class <- taxonatrank(ncbi, chlo01.chlorophyta@motus$taxid, "class", name = TRUE)
+```
+
+```{r warning=FALSE}
+table(table(chlo01.chlorophyta@samples$EXTRACTION.CODE)[as.character(chlo01.chlorophyta@samples$EXTRACTION.CODE)], chlo01.chlorophyta@samples$Site_short)
+```
+
+```{r}
+chlo01.chlorophyta %>% plot_reads_x_motus(q = 1, threshold = 0.00) + geom_hline(yintercept = 4)
+```
+
+```{r}
+dir.create("cleaned_datasets", showWarnings = FALSE)
+write.csv2(chlo01.chlorophyta@reads, file = "cleaned_datasets/Chlo01.cleanned.reads.csv")
+write.csv2(chlo01.chlorophyta@motus, file = "cleaned_datasets/Chlo01.cleanned.motus.csv")
+write.csv2(chlo01.chlorophyta@samples, file = "cleaned_datasets/Chlo01.cleanned.samples.csv")
+```
