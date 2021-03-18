@@ -2,6 +2,7 @@
 output:
   html_document: 
     theme: journal
+    df_print: paged
   pdf_document: default
 ---
 

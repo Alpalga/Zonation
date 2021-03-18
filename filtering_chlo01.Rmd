@@ -3,6 +3,7 @@ title: "Filtering Chlo01"
 output:
   html_document: 
     theme: journal
+    df_print: paged
   pdf_document: default
 ---
 
