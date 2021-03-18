@@ -77,9 +77,9 @@ A RMarkdown resumes the filtering for each marker
 
 And the corresponding HTML files (the ones to look over)
 
-- `filtering_chlo01.html`
-- `filtering_chlo02.html`
-- `filtering_euka03.html`
+- [`filtering_chlo01.html`](filtering_chlo01.html)
+- [`filtering_chlo02.html`](filtering_chlo02.html)
+- [`filtering_euka03.html`](filtering_euka03.html)
 
 The gererated curated data tables are stored in the
 directory `cleaned_datasets`
