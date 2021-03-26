@@ -7,6 +7,8 @@ output:
   pdf_document: default
 ---
 
+[Go back to the global description of the project](index.html)
+
 # Setting up the R environment
 
     - `ROBITools` package is used to read result files produced by OBITools.
@@ -408,12 +410,13 @@ euka03.eukaryota@samples$chlorophyceae_part <- apply(euka03_by_taxo_group@reads,
 euka03.eukaryota@samples$trebouxiophyceae_part <- apply(euka03_by_taxo_group@reads, MARGIN = 1, function(x) x[5]/sum(x))
 ```
 
-
+# Saves the cleaned data set
 
 ```{r}
-write.csv2(euka03.eukaryota@reads,file   = "cleaned_datasets/euka03.cleanned.reads.csv")
-write.csv2(euka03.eukaryota@motus,file   = "cleaned_datasets/euka03.cleanned.motus.csv")
-write.csv2(euka03.eukaryota@samples,file = "cleaned_datasets/euka03.cleanned.samples.csv")
+dir.create("cleaned_datasets", showWarnings = FALSE)
+write.csv2(euka03.eukaryota@reads,file   = "cleaned_datasets/Euka03.cleaned.reads.csv")
+write.csv2(euka03.eukaryota@motus,file   = "cleaned_datasets/Euka03.cleaned.motus.csv")
+write.csv2(euka03.eukaryota@samples,file = "cleaned_datasets/Euka03.cleaned.samples.csv")
 ```
 
 

@@ -6,6 +6,8 @@ output:
   pdf_document: default
 ---
 
+[Go back to the global description of the project](index.html)
+
 # Setting up the R environment
 
     - `ROBITools` package is used to read result files produced by OBITools.
@@ -414,9 +416,11 @@ table(table(chlo02.chlorophyceae@samples$EXTRACTION.CODE)[as.character(chlo02.ch
 chlo02.chlorophyceae %>% plot_reads_x_motus(q = 1, threshold = 0.00) + geom_hline(yintercept = 4)
 ```
 
+# Saves the cleaned data set
+
 ```{r}
 dir.create("cleaned_datasets", showWarnings = FALSE)
-write.csv2(chlo02.chlorophyceae@reads, file = "cleaned_datasets/Chlo02.cleanned.reads.csv")
-write.csv2(chlo02.chlorophyceae@motus, file = "cleaned_datasets/Chlo02.cleanned.motus.csv")
-write.csv2(chlo02.chlorophyceae@samples, file = "cleaned_datasets/Chlo02.cleanned.samples.csv")
+write.csv2(chlo02.chlorophyceae@reads, file = "cleaned_datasets/Chlo02.cleaned.reads.csv")
+write.csv2(chlo02.chlorophyceae@motus, file = "cleaned_datasets/Chlo02.cleaned.motus.csv")
+write.csv2(chlo02.chlorophyceae@samples, file = "cleaned_datasets/Chlo02.cleaned.samples.csv")
 ```

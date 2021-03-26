@@ -1,0 +1,53 @@
+---
+title: 'Article : '
+output:
+  html_document:
+    df_print: paged
+---
+
+
+
+## Github project
+
+Every scripts and processed data are available from the Alpalga/Zonation github project.
+
+  - https://github.com/Alpalga/Zonation
+  
+## Préprocessing of the raw data
+
+The [`OBITools`](http://metabarcoding.org/obitools) commands used to preprocess
+the dataz from the raw FASTQ files are described in the following bash script.
+
+- [Bash script for the preprocessing of the raw data](obitools_preprocessing.sh) 
+
+## Filtering of the data
+
+- For the *Eukaryota* [`Euka03`](filtering_euka03.html) marker
+- For the *Chlorophyta* [`Chlo01`](filtering_chlo01.html) marker
+- For the *Chlorophyceae* [`Chlo02`](filtering_chlo02.html) marker
+
+## Ecological analysis
+
+Every code producing the presented results including the production
+of the figures is available [here](alpin_algeaes.html)
+
+## Processed data sets and results
+
+Each processed dataset is composed of three coma separated values files (`.csv` files).
+
+- For the *Eukaryota* `Euka03` marker
+    + The MOTUs description file : [`Euka03.cleaned.motus.csv`](cleaned_datasets/Euka03.cleaned.motus.csv)
+    + The samples description file : [`Euka03.cleaned.samples.csv`](cleaned_datasets/Euka03.cleaned.samples.csv)
+    + The reads contengency table : [`Euka03.cleaned.reads.csv`](cleaned_datasets/Euka03.cleaned.reads.csv)
+- For the *Chlorophyta* `Chlo01` marker
+    + The MOTUs description file : [`Chlo01.cleaned.motus.csv`](cleaned_datasets/Chlo01.cleaned.motus.csv)
+    + The samples description file : [`Chlo01.cleaned.samples.csv`](cleaned_datasets/Chlo01.cleaned.samples.csv)
+    + The reads contengency table : [`Chlo01.cleaned.reads.csv`](cleaned_datasets/Chlo01.cleaned.reads.csv)
+- For the *Chlorophyceae* `Chlo02` marker
+    + The MOTUs description file : [`Chlo02.cleaned.motus.csv`](cleaned_datasets/Chlo02.cleaned.motus.csv)
+    + The samples description file : [`Chlo02.cleaned.samples.csv`](cleaned_datasets/Chlo02.cleaned.samples.csv)
+    + The reads contengency table : [`Chlo02.cleaned.reads.csv`](cleaned_datasets/Chlo02.cleaned.reads.csv)
+
+
+
+
