@@ -1,5 +1,5 @@
 ---
-title: 'Article : Altitudinal zonation of green algae biodiversity in the French Alps'
+title: 'Data & Scripts : Altitudinal zonation of green algae biodiversity in the French Alps'
 author:
   - name: Adeline Stewart
     institute: pcv,lautaret,leca
