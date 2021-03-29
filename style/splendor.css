@@ -92,9 +92,7 @@ h4.author {
   font-size: 0.8rem;
 }
 
-div.level1 ~ h1 {
-  padding: 0rem;
-}
+
 h1,
 .splendor-h1,
 h2,
