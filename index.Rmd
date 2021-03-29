@@ -52,7 +52,7 @@ Every scripts and processed data are available from the Alpalga/Zonation github 
 
   - https://github.com/Alpalga/Zonation
   
-# Préprocessing of the raw data
+# Preprocessing of the raw data
 
 The [`OBITools`](http://metabarcoding.org/obitools) commands used to preprocess
 the dataz from the raw FASTQ files are described in the following bash script.
