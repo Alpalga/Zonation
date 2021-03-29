@@ -2,3 +2,7 @@
 .Rhistory
 .RData
 .Ruserdata
+*.md
+filtering_chlo01_files
+filtering_chlo02_files
+filtering_euka03_files
