@@ -1,10 +1,49 @@
 ---
 title: "Filtering euka03"
+author:
+  - name: Adeline Stewart
+    institute: [pcv,lautaret,leca]
+  - name: Delphine Rioux
+    institute: leca
+  - name: Fréderic Boyer
+    institute: leca
+  - name: Ludovic Gielly
+    institute: leca
+  - name: François Pompanon
+    institute: leca
+  - name: Amélie Saillard
+    institute: leca
+  - name: Wilfried Thuiller
+    institute: leca
+  - name: The ORCHAMP Consortium 
+  - name: Jean-Gabriel Valay
+    institute: lautaret
+  - name: Eric Maréchal
+    email: eric.marechal@cea.fr
+    institute: pcv
+    correspondence: true
+  - name: Eric Coissac
+    institute: leca
+    email: eric.coissac@metabarcoding.org 
+    correspondence: true
+institute:
+  - pcv: Univ. Grenoble Alpes, CEA, CNRS, INRAE, IRIG, Laboratoire de Physiologie Cellulaire & Végétale, 38000 Grenoble.
+  - lautaret: Univ. Grenoble-Alpes, CNRS, Jardin du Lautaret, 38000, Grenoble, France.
+  - leca: Univ. Grenoble-Alpes, Univ. Savoie Mont Blanc, CNRS, LECA, 38000, Grenoble, France.
 output:
   html_document: 
-    theme: journal
+    keep_md: yes
     df_print: paged
-  pdf_document: default
+    number_sections: yes
+    pandoc_args:
+      - '--lua-filter=style/scholarly-metadata.lua'
+      - '--lua-filter=style/author-info-blocks.lua'
+    css: style/splendor.css
+  pdf_document: 
+    number_sections: yes
+    pandoc_args:
+      - '--lua-filter=style/scholarly-metadata.lua'
+      - '--lua-filter=style/author-info-blocks.lua'
 ---
 
 [Go back to the global description of the project](index.html)
