@@ -2,7 +2,7 @@
 title: 'Article : Altitudinal zonation of green algae biodiversity in the French Alps'
 author:
   - name: Adeline Stewart
-    institute: [pcv,lautaret,leca]
+    institute: pcv,lautaret,leca
   - name: Delphine Rioux
     institute: leca
   - name: Fréderic Boyer
