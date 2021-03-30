@@ -1,4 +1,4 @@
-# RStudio project describing the data processing of the Alpalga Zonation manuscript
+# RStudio project describing the data processing for the Alpalga Zonation manuscript
 
 An overview of the data, scripts, and results can be consulted at the following address
 
@@ -24,6 +24,7 @@ pushd embl-140
 gunzip *
 popd
 ```
+
 #### The curated data sets
 
 The curated data sets (see the filtering repports below)
