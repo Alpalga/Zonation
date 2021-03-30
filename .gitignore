@@ -6,3 +6,6 @@
 filtering_chlo01_files
 filtering_chlo02_files
 filtering_euka03_files
+*.nb.html
+alpin_algeaes_cache
+alpin_algeaes_files
