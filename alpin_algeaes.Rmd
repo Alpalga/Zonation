@@ -1,0 +1,1960 @@
+---
+title: "Alpin Algae - Ecological analysis"
+author:
+  - name: Adeline Stewart
+    institute: [pcv,lautaret,leca]
+  - name: Delphine Rioux
+    institute: leca
+  - name: Fréderic Boyer
+    institute: leca
+  - name: Ludovic Gielly
+    institute: leca
+  - name: François Pompanon
+    institute: leca
+  - name: Amélie Saillard
+    institute: leca
+  - name: Wilfried Thuiller
+    institute: leca
+  - name: The ORCHAMP Consortium 
+  - name: Jean-Gabriel Valay
+    institute: lautaret
+  - name: Eric Maréchal
+    email: eric.marechal@cea.fr
+    institute: pcv
+    correspondence: true
+  - name: Eric Coissac
+    institute: leca
+    email: eric.coissac@metabarcoding.org 
+    correspondence: true
+institute:
+  - pcv: Univ. Grenoble Alpes, CEA, CNRS, INRAE, IRIG, Laboratoire de Physiologie Cellulaire & Végétale, 38000 Grenoble.
+  - lautaret: Univ. Grenoble-Alpes, CNRS, Jardin du Lautaret, 38000, Grenoble, France.
+  - leca: Univ. Grenoble-Alpes, Univ. Savoie Mont Blanc, CNRS, LECA, 38000, Grenoble, France.
+output:
+  html_document: 
+    df_print: paged
+    number_sections: yes
+    pandoc_args:
+      - '--lua-filter=style/scholarly-metadata.lua'
+      - '--lua-filter=style/author-info-blocks.lua'
+    css: style/splendor.css
+---
+
+[Go back to the global description of the project](index.html)
+
+
+# Setting up the R environment
+
+## Loading of the R libraries
+
+- `ROBITools` package is used to read result files produced by OBITools.
+
+- `ROBITaxonomy` package provides function allowing to query OBITools formated taxonomy.
+    
+```{r loads_robitools, warning=FALSE}
+if (!require(ROBITools)) {
+
+  # ROBITools are not available on CRAN and have to be installed
+  # from http://git.metabarcoding.org using devtools
+
+  if (!require(devtools)) {
+    install.packages("devtools")
+  }
+
+  devtools::install_git("https://git.metabarcoding.org/obitools/ROBIUtils.git")
+  devtools::install_git("https://git.metabarcoding.org/obitools/ROBITaxonomy.git")
+  devtools::install_git("https://git.metabarcoding.org/obitools/ROBITools.git")
+
+  library(ROBITools)
+}
+
+library(ROBITaxonomy)
+```
+
+- `tidyverse` provides various method for efficient data manipulation and plotting via `ggplot2`
+
+```{r loads_tidyverse, warning=FALSE}
+if (!require(tidyverse)) {
+  install.packages("tidyverse")
+  library(tidyverse)
+}
+```
+
+- `vegan` is loaded for its `decostand` function
+
+```{r loads_vegan, warning=FALSE}
+if (!require(vegan)) {
+  install.packages("vegan")
+  library(vegan)
+}
+```
+
+- `ade4` provides multivariate analysis functions
+
+```{r loads_ade4, warning=FALSE}
+if (!require(ade4)) {
+  install.packages("ade4")
+  library(ade4)
+}
+```
+
+- `matrixStats` is loaded for its `weightedMedian` function
+
+```{r loads_matrixStats, warning=FALSE}
+if (!require(matrixStats)) {
+  install.packages("matrixStats")
+  library(matrixStats)
+}
+```
+
+- `sfsmisc` is loaded for its `pretty10exp` function
+
+```{r loads_sfsmisc, warning=FALSE}
+if (!require(sfsmisc)) {
+  install.packages("sfsmisc")
+  library(sfsmisc)
+}
+```
+
+- `GGally` is loaded for its `ggpairs` function
+
+```{r loads_GGally, warning=FALSE}
+if (!require(GGally)) {
+  install.packages("GGally")
+  library(GGally)
+}
+```
+
+- `ggrepel` is loaded for its `geom_text_repel` function
+
+```{r loads_ggrepel, warning=FALSE}
+if (!require(ggrepel)) {
+  install.packages("ggrepel")
+  library(ggrepel)
+}
+```
+
+- `gridExtra` is loaded for its `grid.arrange` function
+
+```{r loads_gridExtra, warning=FALSE}
+if (!require(gridExtra)) {
+  install.packages("gridExtra")
+  library(gridExtra)
+}
+```
+
+- `robustreg` is loaded for its `robustRegBS` function
+
+```{r loads_robustreg, warning=FALSE}
+if (!require(robustreg)) {
+  install.packages("robustreg")
+  library(robustreg)
+}
+```
+
+- `ggpubr` is loaded for its `ggarrange` function
+
+```{r loads_ggpubr, warning=FALSE}
+if (!require(ggpubr)) {
+  install.packages("ggpubr")
+  library(ggpubr)
+}
+```
+
+- `gg.gap` is loaded for its `gg.gap` function
+
+```{r loads_gg_gap, warning=FALSE}
+if (!require(gg.gap)) {
+  install.packages("gg.gap")
+  library(gg.gap)
+}
+```
+
+
+## Utility functions
+
+```{r loads_util_functions}
+source("utils._func.R")
+```
+
+### Data standardization functions
+
+#### Function converting the sites list to a factor ordored according to their median elevation.
+
+```{r site_factor_func}
+site_factor <- function(x) {
+  levels1 <- names(tapply(euka03@samples$Elevation, 
+                          euka03@samples$Site_short, 
+                          median) %>% sort())
+  xf <- factor(x, levels = levels1)
+  xf
+}
+```
+
+#### Function translating environment names from French to English.
+
+```{r milieu_factor_func}
+milieu_factor <- function(x) {
+  f <- as.character(x) %>% 
+       factor(levels = c("Milieu forestier", 
+                         "Milieu ouvert"))
+  levels(f) <- c("Forest", "Open area")
+  f
+}
+```
+
+#### Function substituting soil horizon from abbreviations to full names.
+
+```{r horizon_factor_func}
+horizon_factor <- function(x) {
+  f <- as.character(x) %>% 
+       factor(levels = c("LIT", "SOL"))
+  levels(f) <- c("Litter", "Topsoil")
+  f
+}
+```
+
+#### Function renaming environmental variables.
+
+```{r variable_factor_func}
+variable_factor <- function(x) {
+  f <- as.character(x) %>% 
+       factor(levels = c("Elevation", "pH", 
+                         "Organic_matter_2mm", 
+                         "Carbon", "Nitrogen", 
+                         "cn_ratio"))
+  levels(f) <- c("Elevation", "pH", 
+                 "Organic matter", 
+                 "Carbon", "Nitrogen", 
+                 "C/N Ratio")
+  f
+}
+```
+
+### Graphical functions
+
+#### `theme_paper` defines the ggplot theme for the figures
+
+```{r theme_paper_func}
+theme_paper <- function() {
+  theme_classic(base_size = 9) +
+    theme(
+      strip.background = element_rect(linetype = "blank"),
+      panel.spacing = unit(1, "lines")
+    )
+}
+```
+
+#### Functions to save graphics for publication
+
+Functions wrapping the ggplot `ggsave` function to produce `TIFF` and `PDF` files
+according to the Frontiers recommendations
+
+  + `write_figure_1_col` : for the one column figures
+  + `write_figure_2_cols` : for the two columns figures
+
+```{r write_figure_funcs}
+write_figure <- function(name, width = 180, height = 90, dpi = 300) {
+  dir.create("Figures", showWarnings = FALSE)
+  ggsave(sprintf("Figures/%s.pdf", name), 
+         units = "mm", width = width, 
+         height = height, dpi = dpi)
+  ggsave(sprintf("Figures/%s.tiff", name), 
+         units = "mm", width = width, 
+         height = height, dpi = dpi)
+}
+
+write_figure_1_col <- function(name, height = 90, dpi = 300) {
+  write_figure(name, 85, height, dpi)
+}
+
+write_figure_2_cols <- function(name, height = 90, dpi = 300) {
+  write_figure(name, 180, height, dpi)
+}
+```
+
+### Statistical functions
+
+#### `vif` estimates the Variance Inflation Factor.
+
+Function estimating the Variance Inflation Factor (VIF). The
+function estimates VIF for every columns of a `data.frame`
+
+VIF estimates how much a explanatory variable can be expressed as a linear combination of the others.
+It is commonly admited to remove variables with a $ VIF>5$.
+
+$$
+VIF = \frac{1}{1-R^2}
+$$
+
+with $R^2$ the adjusted $R^2$ of the linear regression of one explanatory variable by the others.
+
+
+```{r function_vif}
+vif <- function(data) {
+  n <- ncol(data)
+
+  r2 <- sapply(
+    1:n,
+    function(i) {
+      summary(lm(as.formula(data[, c(i, (1:n)[-i])]),
+        data = data
+      ))$adj.r.squared
+    }
+  )
+  v <- 1 / (1 - r2)
+  names(v) <- colnames(data)
+  sort(v, decreasing = TRUE)
+}
+```
+
+
+#### `rtest_niche` estimates the specialisation of a niche.
+
+The niche is defined following the OMI model implemented in
+the `ade4::niche` function.
+
+`rtest_niche` implements a double permutation test on :
+
+- the marginality measure ($H_1$ : the marginality is different from $0$)
+- the tolerance ($H_1$ tolerance is smaller than in a uniform random distribution)
+    
+The test is implemented following the same permutation procedure used 
+to test marginality in the `ade4::rtest` function.
+
+
+```{r}
+rtest_niche <- function(xtest, nrepet = 99, ...) {
+  if (!inherits(xtest, "dudi")) {
+    stop("Object of class dudi expected")
+  }
+  if (!inherits(xtest, "niche")) {
+    stop("Type 'niche' expected")
+  }
+
+  appel <- as.list(xtest$call)
+  X <- eval.parent(appel$dudiX)$tab
+
+  Y <- eval.parent(appel$Y)
+  w1 <- colSums(Y)
+  if (any(w1 <= 0)) {
+    stop(paste("Column sum <=0 in Y"))
+  }
+  Y <- sweep(Y, 2, w1, "/")
+
+  calcul_niche <- function(freq, mil) {
+    m <- colSums(freq * mil)
+    mil <- t(t(mil) - m)
+    tolt <- sum(freq * mil * mil)
+    u <- m / sqrt(sum(m^2))
+    z <- mil %*% u
+    c(sum(m^2), sum(freq * z * z))
+  }
+
+  obs_niche <- apply(Y, 2, calcul_niche, mil = X)
+
+  #    obs <- c(obs, Tolm.mean = mean(obs))
+  sim_niche <- lapply(
+    1:nrepet,
+    function(x) {
+      apply(apply(Y, 2, sample),
+        2,
+        calcul_niche,
+        mil = X
+      )
+    }
+  )
+
+  better_mid <- rowSums(sapply(1:length(sim_niche), 
+                               function(i) sim_niche[[i]][1, ] >= obs_niche[1, ]))
+  better_tol <- rowSums(sapply(1:length(sim_niche), 
+                               function(i) sim_niche[[i]][2, ] <= obs_niche[2, ]))
+  better <- mapply(min, better_mid, better_tol)
+
+  (better + 1) / (nrepet + 1)
+}
+```
+
+#### `motus_gradient` estimates the distribution range of MOTUs along a gradient.
+
+Considering an environmental gradient that function estimates : 
+
+- The pic of density of each MOTU along the gradient. That value is estimated as 
+  the mean of the gradient weighted by the read relative frequency of the considered 
+  MOTU in the samples.      
+  
+- The limits of the niche, centred on the pic of density, and estimated
+  from the tolerance parameter (the variance of the gradient weighted by the read relative 
+  frequency of the MOTU).
+  
+- Estimated $p_value$ of that niche using the `rtest_niche` function.
+    
+**Parameters** : 
+
+- `data` : a `metabarcoding.data` instance.
+- `gradient` : a numeric vector with one value per sample.
+
+**returns**
+
+A `data.frame` of ten columns :
+
+- `motu` : the MOTU name
+- `gradient_weight` : the weigthed median of the gradient value for the MOTU 
+- `range_low` : the lower limit of the gradient range
+- `range_high` : the higher limit of the gradient range 
+- `pval` : the p-value as returned by the `rtest_niche` function.
+- `var` : variance of the gradient.
+- `sd` : square root of `var`.
+
+```{r}
+niche_motus_gradient <- function(data, gradient, nrepet = 999) {
+  relfreq <- decostand(data@reads, method = "total")
+  motus_normed <- decostand(relfreq, method = "total", MARGIN = 2)
+
+  mean_gradient <- colSums(sweep(motus_normed, 
+                                 MARGIN = 1, 
+                                 STATS = gradient, FUN = "*"))
+  var_gradient <- colSums(outer(gradient, 
+                                mean_gradient, 
+                                "-")^2 * motus_normed)
+  data.frame(
+    motu = colnames(data),
+    gradient_weight = mean_gradient,
+    range_low = mean_gradient - 1.96 * sqrt(var_gradient),
+    range_high = mean_gradient + 1.96 * sqrt(var_gradient),
+    pval = rtest_niche(niche(dudi.pca(data.frame(gradient),
+      scannf = FALSE
+    ),
+    as.data.frame(relfreq),
+    scannf = FALSE
+    ), nrepet = 999),
+    var = var_gradient,
+    sd = sqrt(var_gradient)
+  )
+}
+```
+
+#### `plot_motus_gradient` plots the result of the `motus_gradient` function
+
+That function draws a map of the MOTUs distribution along a gradient. It use the 
+result of the `motus_gradient` function as input.
+
+**Parameters** : 
+
+- `data` : a `metabarcoding.data` instance.
+- `gradient` : a numeric vector with one value per sample.
+- `motus_distribution`:
+- `motus_order`:
+- `alpha_risk`:
+- `jitter`:
+
+
+```{r function_plot_motus_gradient}
+plot_motus_gradient <- function(data, gradient,
+                                motus_distribution,
+                                motus_order = motus_distribution$gradient_weight,
+                                alpha_risk = 0.05,
+                                only_h1 = FALSE,
+                                jitter = 0.01) {
+  jitter <- jitter * sd(gradient)
+
+  motus_distribution$raw_pval <- motus_distribution$pval
+  motus_distribution$pval <- p.adjust(motus_distribution$pval,
+                                      method = "fdr")
+
+  relfreq <- decostand(data@reads, method = "total")
+
+  if (only_h1) {
+    relfreq <- relfreq[, motus_distribution$pval < alpha_risk]
+  }
+
+  urank <- function(data) {
+    r <- rank(data)
+    ru <- unique(r)
+    rur <- rank(ru)
+    names(rur) <- ru
+    rep <- rur[as.character(r)]
+    names(rep) <- NULL
+    rep
+  }
+
+  motus_distribution <- motus_distribution[order(motus_order), ]
+  if (only_h1) {
+    motus_distribution <- motus_distribution[motus_distribution$pval < alpha_risk, ]
+  }
+
+  motu_labels <- mapply(
+    function(m, pval, p) {
+      if (round(pval, 2) <= alpha_risk) {
+        bquote(atop(textstyle(bolditalic(.(m))), 
+                    textstyle(P[value] == .(p))))
+      } else {
+        bquote(atop(textstyle(italic(.(m))), 
+                    textstyle(P[value] == .(p))))
+      }
+    },
+    motus_distribution$motu,
+    motus_distribution$pval,
+    pretty10exp(motus_distribution$pval, drop.1 = TRUE, digits = 2)
+  )
+
+  cbind(
+    data.frame(
+      gradient = gradient,
+      pcr = rownames(data),
+      Site = site_factor(data@samples$Site_short)
+    ),
+    as.data.frame(relfreq)
+  ) %>%
+    pivot_longer(data = ., 
+                 cols = names(.)[-c(1:3)], 
+                 names_to = "motu") %>%
+    group_by(gradient, Site, pcr) %>%
+    mutate(g = cur_group_id()) %>%
+    group_by(gradient) %>%
+    mutate(g = urank(g) * jitter) %>%
+    left_join(motus_distribution, by = "motu") %>%
+    mutate(motu = factor(motu, 
+                         levels = motus_distribution$motu[order(motus_distribution$gradient_weight)])) %>%
+    arrange(gradient) %>%
+    ggplot(aes(x = gradient - g, 
+               xend = gradient - g, 
+               y = 0, 
+               yend = value * 100, 
+               col = Site)) +
+    facet_wrap(vars(motu),
+      switch = "y",
+      labeller = function(variable, value) motu_labels[value],
+      ncol = 2, dir = "v"
+    ) +
+    geom_rect(aes(
+      xmin = range_low, xmax = range_high,
+      ymin = 0, ymax = 100 * as.numeric(pval < alpha_risk),
+      alpha = 0.03
+    ),
+    fill = grey(0.8), col = 0, show.legend = FALSE
+    ) +
+    geom_segment(aes(x = gradient_weight, 
+                     xend = gradient_weight, 
+                     y = 30, yend = 100),
+      col = rgb(0, 0, 0, 0.2),
+      arrow = arrow(length = unit(3, "mm"), 
+                    ends = "first", type = "closed")
+    ) +
+    geom_segment() +
+    geom_point(aes(y = 0.1), cex = 0.3) +
+    theme_paper() +
+    theme(
+      strip.text.y.left = element_text(
+        angle = 0,
+        size = 6,
+        lineheight = 1,
+        vjust = 0.5
+      ),
+      axis.text = element_text(size = 6),
+      panel.spacing = unit(.4, "lines")
+    ) +
+    scale_y_log10(limits = c(0.1, 100)) +
+    xlim(
+      min(motus_distribution$range_low),
+      max(motus_distribution$range_high)
+    ) +
+    ylab("Relative read frequencies (%)")
+}
+```
+
+# Loading the data
+
+Processed data files cand be produced using the code present in the following notebooks :
+
+- [`filtering_euka03.Rmd`](filtering_euka03.html)
+- [`filtering_chlo01.Rmd`](filtering_chlo01.html)
+- [`filtering_chlo02.Rmd`](filtering_chlo02.html)
+    
+## Loading of the `Euka03` cleaned dataset
+
+```{r read_euka03}
+euka03_motus <- read.csv2("cleaned_datasets/Euka03.cleaned.motus.csv",
+  header = TRUE, row.names = 1)
+
+euka03_samples <- read.csv2("cleaned_datasets/Euka03.cleaned.samples.csv",
+  header = TRUE, row.names = 1) %>% 
+  rename(Elevation = Altitude, Elev_groups = Alt_groups)
+
+euka03_reads <- read.csv2("cleaned_datasets/Euka03.cleaned.reads.csv",
+  header = TRUE, row.names = 1) %>% 
+  as.matrix()
+
+euka03 <- metabarcoding.data(
+  reads = euka03_reads,
+  samples = euka03_samples,
+  motus = euka03_motus
+)
+
+rm(euka03_motus, euka03_samples, euka03_reads)
+```
+
+## Loading of the `Chlo01` cleaned dataset
+
+```{r read_chlo01}
+chlo01_motus <- read.csv2("cleaned_datasets/Chlo01.cleaned.motus.csv",
+  header = TRUE, row.names = 1
+)
+
+chlo01_samples <- read.csv2("cleaned_datasets/Chlo01.cleaned.samples.csv",
+  header = TRUE, row.names = 1
+) %>% rename(Elevation = Altitude, Elev_groups = Alt_groups)
+
+chlo01_reads <- read.csv2("cleaned_datasets/Chlo01.cleaned.reads.csv",
+  header = TRUE, row.names = 1
+) %>% as.matrix()
+
+chlo01 <- metabarcoding.data(
+  reads = chlo01_reads,
+  samples = chlo01_samples,
+  motus = chlo01_motus
+)
+
+rm(chlo01_motus, chlo01_samples, chlo01_reads)
+```
+
+## Loading of the `Chlo02` cleaned dataset
+
+```{r read_chlo02}
+chlo02_motus <- read.csv2("cleaned_datasets/Chlo02.cleaned.motus.csv",
+  header = TRUE, row.names = 1
+)
+
+chlo02_samples <- read.csv2("cleaned_datasets/Chlo02.cleaned.samples.csv",
+  header = TRUE, row.names = 1
+) %>% rename(Elevation = Altitude, Elev_groups = Alt_groups)
+
+chlo02_reads <- read.csv2("cleaned_datasets/Chlo02.cleaned.reads.csv",
+  header = TRUE, row.names = 1
+) %>% as.matrix()
+
+chlo02 <- metabarcoding.data(
+  reads = chlo02_reads,
+  samples = chlo02_samples,
+  motus = chlo02_motus
+)
+
+rm(chlo02_motus, chlo02_samples, chlo02_reads)
+```
+
+
+## Loading of the NCBI taxonomy
+
+The ncbi taxonomy have to be previously formated using  the `obitaxonomy` command from *OBITools*.
+
+
+```{r read_taxonomy}
+ncbi <- read.taxonomy("embl-140/ncbi20190930")
+```
+
+# Environmental variables selection and preparation
+
+We'll consider a set of 6 environmental variables assessed during the soil sampling.
+
+- total Nitrogen concentration
+- total Carbon concentration
+- Organic matter (2mm)
+- pH
+- Elevation : Elevation above sea level (m)
+- C/N ratio
+    
+## Selection of the usable variables
+
+### Preparing the environmental data
+
+Estimates the $\alpha\text{-diversity} \; ^{1}D$ of samples
+
+```{r}
+chlo01@samples$D_1 <- apply(chlo01@reads, MARGIN = 1, D_q)
+```
+
+
+```{r env_variables}
+environmental <- chlo01@samples %>%
+  select(which(sapply(., is.numeric)), 
+         Horizon, Milieu, Site = Site_short) %>%
+  rename(Environment = Milieu) %>%
+  mutate(
+    Site = site_factor(Site),
+    Environment = milieu_factor(Environment),
+    Horizon = horizon_factor(Horizon)
+  ) %>%
+  # select_if(is.numeric) %>%
+  select(-rep_pcr, -X, -Elev_groups, 
+         -dist_barycenter, -chlorophyta_part, -D_1) %>%
+  select(-starts_with("EEA_")) %>%
+  mutate(cn_ratio = Carbon / Nitrogen)
+```
+
+### Relationship between numerical and categorial environmental data
+
+```{r, fig.height=8,fig.width=4}
+environmental %>%
+  pivot_longer(
+    cols = c("Horizon", "Environment", "Site"),
+    names_to = "Category",
+    values_to = "Modality"
+  ) %>%
+  pivot_longer(.,
+    cols = which(sapply(., is.numeric)),
+    names_to = "Variable",
+    values_to = "Value"
+  ) %>%
+  mutate(Variable = variable_factor(Variable)) %>%
+  ggplot(aes(x = Modality, y = Value)) +
+  geom_boxplot() +
+  facet_grid(Variable ~ Category, scales = "free") +
+  theme(axis.text.x = element_text(
+    angle = 20,
+    hjust = 0.8
+  ))
+```
+
+Keeps an renames only numerical environmental variables
+
+```{r clean_env_vars}
+environmental <- environmental %>%
+  select(`Elevation`,
+    `pH`,
+    `Organic matter` = Organic_matter_2mm,
+    `Carbon`,
+    `Nitrogen`,
+    `C/N Ratio` = cn_ratio
+  )
+```
+
+The code below produces the supplementary `Figure S1`
+
+```{r env_plot, fig.height=12,fig.width=12, warning=FALSE}
+environmental %>% ggpairs(
+  progress = FALSE,
+  aes(col = site_factor(chlo01@samples$Site_short)),
+  alpha = 0.5,
+  cex = 0.7,
+  upper = list(continuous = wrap(ggally_cor, size = 2)),
+  diag = list(continuous = wrap("densityDiag", alpha = 0.5), 
+              combo = "box"),
+  lower = list(continuous = wrap(ggally_points, size = 1))
+) +
+  theme(
+    axis.text = element_text(size = 6),
+    panel.spacing = unit(0.7, "lines")
+  )
+
+write_figure_2_cols("Figure_S1", height = 180)
+```
+
+### Selection of a non-correlated subset of environmental variables
+
+- First round of selection
+
+```{r vif_env_var}
+vif(environmental)
+```
+
+We remove `Carbon`
+
+- Second round of selection
+
+```{r vif_carbon}
+environmental %>%
+  select(-Carbon) %>%
+  vif()
+```
+
+We remove `Organic_matter_2mm`
+
+```{r vif_organic}
+environmental %>%
+  select(-Carbon, -`Organic matter`) %>%
+  vif()
+```
+
+Every *VIF* are below five.
+
+```{r select_env_var, fig.height=12,fig.width=12, warning=FALSE}
+environmental %>% select(-Carbon, -`Organic matter`) -> selected_env
+selected_env %>% ggpairs(
+  progress = FALSE,
+  aes(col = site_factor(chlo01@samples$Site_short))
+)
+```
+
+# *Chlorophyta* corresponds to a small fraction of environmental DNA
+
+*Chlorophyta* DNA represents a small part of the of the extracted environmental DNA.
+It can be explained by a low capacity to extract algeae DNA from soil samples, and/or
+by a low biomass of algeae in soil. It as to be noticed that the used DNA extraction method
+target extracellular DNA.
+
+Based on the `Euka03` marker we can estimate the relative aboundance of fungi, plants and
+Chlorophyta in soil extracellular DNA.
+
+Produces the `Figure 2`.
+
+```{r}
+euka03@samples %>%
+  select(Site = Site_short, ends_with("_part")) %>%
+  rownames_to_column(var = "sample") %>%
+  filter(chlorophyta_part > 0) %>%
+  pivot_longer(
+    cols = ends_with("_part"),
+    names_to = "Taxonomic group", values_to = "fraction"
+  ) %>%
+  mutate(
+    `Taxonomic group` = str_replace(`Taxonomic group`, 
+                                    "_part", "") %>%
+      str_to_title(),
+    Site = site_factor(Site)
+  ) %>%
+  filter(`Taxonomic group` %in% c(
+    "Fungi",
+    "Streptophyta",
+    "Chlorophyta"
+  )) %>%
+  mutate(`Taxonomic group` = factor(`Taxonomic group`,
+    levels = c(
+      "Chlorophyta",
+      "Streptophyta",
+      "Fungi"
+    )
+  )) %>%
+  ggplot(mapping = aes(x = Site, y = fraction * 100, 
+                       col = `Taxonomic group`)) +
+  # geom_violin()  +
+  geom_boxplot() +
+  scale_y_log10() +
+  xlab("Sampling site") +
+  ylab("Euka03 Relative read frequency (%)") +
+  theme_paper() +
+  theme(
+    legend.title = element_blank(),
+    legend.text = element_text(size = 6),
+    legend.position = "bottom",
+    legend.box = "horizontal", legend.margin = margin()
+  ) +
+  guides(col = guide_legend(
+    title.position = NULL,
+    title.hjust = 0.5,
+    nrow = 1
+  ))
+
+write_figure_1_col("Figure_2")
+```
+
+Moreover only `r round(sum(euka03@samples$chlorophyta_part>0)/length(euka03@samples$chlorophyta_part) * 100,1)`% of the PCR with the `Euka03` marker exhibit some *Chlorophyta* reads.
+
+With the `Chlo01` marker, we observed that many sequences was not annotated as *Chlorophyta*, despite that this marker is supposed to be highly specific to that clade. We can put in relation fraction of Chlorophyta by both the markers `Euka03` and `Chlo01.`
+
+```{r message=FALSE}
+euka03@samples %>%
+  select(EXTRACTION.CODE, chlorophyta_part) %>%
+  group_by(EXTRACTION.CODE) %>%
+  summarise(
+    euka03_algeae_part = ifelse(mean(chlorophyta_part),
+      mean(chlorophyta_part[chlorophyta_part > 0]),
+      0
+    ),
+    euka03_algeae_positive = sum(chlorophyta_part > 0)
+  ) %>%
+  inner_join(chlo01@samples %>%
+    select(EXTRACTION.CODE, chlorophyta_part) %>%
+    group_by(EXTRACTION.CODE) %>%
+    summarise(
+      chlo01_algeae_part = mean(chlorophyta_part[chlorophyta_part > 0])),
+      by = "EXTRACTION.CODE"
+  ) %>%
+  rename(sample = EXTRACTION.CODE) -> algeae_parts
+```
+
+Because of the low amount of *Chlorophyta* DNA results are noisy. To tackle that problem we use iteratively reweighted least squares linear regression. In log scale the determination coefficient of the relation is $R^2 = 25.7\%$  
+
+```{r}
+algeae_parts %>%
+  filter(euka03_algeae_positive > 0) %>%
+  na.omit() %>%
+  as.data.frame() %>%
+  robustRegBS(log10(chlo01_algeae_part) ~ log10(euka03_algeae_part),
+    data = .,
+    anova.table = TRUE
+  ) -> chlo01_euka03_algeae_part_lm
+
+chlo01_euka03_algeae_part_lm %>% summary()
+```
+
+The code below produces the `Figure 3`
+
+```{r}
+algeae_parts %>%
+  filter(euka03_algeae_positive > 0) %>%
+  mutate(
+    weight = chlo01_euka03_algeae_part_lm$weights,
+    euka03_algeae_part = log10(euka03_algeae_part),
+    chlo01_algeae_part = log10(chlo01_algeae_part),
+    part = chlo01_algeae_part < -1
+  ) %>%
+  ggplot(aes(
+    x = euka03_algeae_part,
+    y = chlo01_algeae_part,
+    col = weight
+  )) +
+  geom_point(cex = 0.7) +
+  geom_abline(
+    slope = chlo01_euka03_algeae_part_lm$coefficients[2],
+    intercept = chlo01_euka03_algeae_part_lm$coefficients[1],
+    lty = 2
+  ) +
+  facet_grid(part ~ ., scales = "free_y", space = "free") +
+  scale_y_continuous(
+    labels = scales::number_format(accuracy = 0.1),
+    breaks = seq(-1.5, 0, by = 0.1)
+  ) +
+  ylab(expression(paste(log[10], "(Chlo01 fraction)"))) +
+  xlab(expression(paste(log[10], "(Euka03 fraction)"))) +
+  theme_paper() +
+  theme(
+    strip.background = element_blank(),
+    strip.text.y = element_blank()
+  )
+
+write_figure_1_col("Figure_3", height = 70)
+```
+
+No relationship can be established between *Chlorophyta* eDNA aboundances in the samples and 
+any environmental variable measured.
+
+We have to keep in mind that we are dealing with very low amount od DNA and therefore the sampling strategy
+is perhaps not the best. Consequently we are under sampling the Algeae diversity.
+
+According to the same idea, the more abundant a taxon is in the overall experiment, the more ubiquitous it is.
+
+The code below produces `Figure 4`
+
+```{r warning=FALSE}
+bind_rows(
+  tibble(
+    banality = ((chlo02@reads %>%
+      decostand("total") %>%
+      aggregate(by = list(chlo02@samples$Site_short), 
+                mean))[, -1] > 0) %>%
+      colSums(),
+    frequency = (chlo02@reads %>%
+      decostand("total") %>%
+      aggregate(by = list(chlo02@samples$Site_short), 
+                mean))[, -1] %>%
+      apply(MARGIN = 2, FUN = max),
+    Marker = "Chlo02"
+  ),
+  tibble(
+    banality = ((chlo01@reads %>%
+      decostand("total") %>%
+      aggregate(by = list(chlo01@samples$Site_short), 
+                mean))[, -1] > 0) %>%
+      colSums(),
+    frequency = (chlo01@reads %>%
+      decostand("total") %>%
+      aggregate(by = list(chlo01@samples$Site_short), 
+                mean))[, -1] %>%
+      apply(MARGIN = 2, FUN = max),
+    Marker = "Chlo01"
+  )
+) %>%
+  ggplot(aes(x = factor(banality), y = frequency * 100, 
+             col = Marker)) +
+  geom_boxplot() +
+  scale_y_log10() +
+  xlab("Number of gradient where a MOTUs occurs") +
+  ylab("Relative MOTU frequencies (%)") +
+  theme_paper()
+
+write_figure_1_col("Figure_4")
+```
+
+# Effect of the environmental variables on the *Chlorophyta* $\alpha -diversity$
+
+
+The following code splits the pH, Nitrogen, C/N ratio, and elevation gradiants into seven discret levels.
+
+```{r}
+chlo01@samples %>%
+  filter(Site_short != "CHA") %>%
+  mutate(
+    Site = site_factor(Site_short),
+    Horizon = horizon_factor(Horizon)
+  ) %>%
+  select(D_1, pH, Nitrogen, 
+         cn_ratio = Carbon / Nitrogen, 
+         Elevation, Site, Horizon) %>%
+  mutate(
+    pH_bin = cut(pH, breaks = 7),
+    Nitrogen_bin = cut(Nitrogen, breaks = 7),
+    cn_ratio_bin = cut(cn_ratio, breaks = 7),
+    Elevation_bin = cut(Elevation, breaks = 7)
+  ) %>%
+  mutate(tmp = str_replace_all(pH_bin, 
+                               pattern = "[()\\[\\]]", 
+                               replacement = "")) %>%
+  separate(col = tmp, 
+           into = c("pH_low", "pH_high"), 
+           sep = ",") %>%
+  mutate(pH_low = as.numeric(pH_low), 
+         pH_high = as.numeric(pH_high)) %>%
+  mutate(tmp = str_replace_all(Nitrogen_bin, 
+                               pattern = "[()\\[\\]]", 
+                               replacement = "")) %>%
+  separate(col = tmp, 
+           into = c("Nitrogen_low", "Nitrogen_high"), 
+           sep = ",") %>%
+  mutate(Nitrogen_low = as.numeric(Nitrogen_low), 
+         Nitrogen_high = as.numeric(Nitrogen_high)) %>%
+  mutate(tmp = str_replace_all(cn_ratio_bin, 
+                               pattern = "[()\\[\\]]", 
+                               replacement = "")) %>%
+  separate(col = tmp, 
+           into = c("cn_ratio_low", "cn_ratio_high"), 
+           sep = ",") %>%
+  mutate(cn_ratio_low = as.numeric(cn_ratio_low), 
+         cn_ratio_high = as.numeric(cn_ratio_high)) %>%
+  mutate(tmp = str_replace_all(Elevation_bin, 
+                               pattern = "[()\\[\\]]", 
+                               replacement = "")) %>%
+  separate(col = tmp, 
+           into = c("Elevation_low", "Elevation_high"), 
+           sep = ",") %>%
+  mutate(Elevation_low = as.numeric(Elevation_low), 
+         Elevation_high = as.numeric(Elevation_high)) -> data_diversity
+```
+
+The effect of these discretized gradients on Chlorophyta alpha diversity is tested using the Kruskall Wallis test.
+
+```{r}
+p.adjust(c(
+  kruskal.test(D_1 ~ pH_bin, data = data_diversity)$p.value,
+  kruskal.test(D_1 ~ Elevation_bin, data = data_diversity)$p.value,
+  kruskal.test(D_1 ~ Nitrogen_bin, data = data_diversity)$p.value,
+  kruskal.test(D_1 ~ cn_ratio_bin, data = data_diversity)$p.value),
+  method = "fdr") %>%
+  pretty10exp(drop.1 = TRUE, digits = 2) %>%
+  as.list() -> pval
+```
+
+And part of the *Chlorophyta* alpha diversity variance explained by these gradients is estimated using ANOVA.
+
+```{r}
+c(
+  lm(D_1 ~ pH_bin, data = data_diversity) %>% 
+    anova() %>% pull(`Sum Sq`) %>% 
+    (function(x) x[1] / sum(x))(),
+  lm(D_1 ~ Elevation_bin, data = data_diversity) %>% 
+    anova() %>% pull(`Sum Sq`) %>% 
+    (function(x) x[1] / sum(x))(),
+  lm(D_1 ~ Nitrogen_bin, data = data_diversity) %>% 
+    anova() %>% pull(`Sum Sq`) %>% 
+    (function(x) x[1] / sum(x))(),
+  lm(D_1 ~ cn_ratio_bin, data = data_diversity) %>% 
+    anova() %>% pull(`Sum Sq`) %>% 
+    (function(x) x[1] / sum(x))()
+) %>%
+  round(2) %>%
+  as.list() -> R2
+
+names(pval) <- c("pval_pH", "pval_Elevation", 
+                 "pval_Nitrogen", "pval_cn_ratio")
+names(R2) <- c("R2_pH", "R2_Elevation", 
+               "R2_Nitrogen", "R2_cn_ratio")
+pvalR2 <- c(pval, R2)
+```
+
+The following code produces the `Figure 5`
+
+```{r fig.width=8, fig.height=4}
+ggplot(data = data_diversity) +
+  geom_point(aes(y = D_1, x = pH, 
+                 col = Site, shape = Horizon), cex = 0.8) +
+  geom_segment(data = group_by(data_diversity, pH_bin) %>%
+    summarise(
+      m = mean(D_1),
+      sd = sd(D_1) / sqrt(length(D_1)),
+      low = mean(pH_low),
+      high = mean(pH_high),
+      ddl = length(D_1) - 1,
+      se_low = m + qt(0.025, ddl) * sd,
+      se_high = m + qt(0.975, ddl) * sd,
+      delta = (high - low) * 0.05,
+      center = (low + high) / 2
+    ) -> stat, aes(y = m, yend = m, 
+                   x = low + delta, 
+                   xend = high - delta), size = 1.5) +
+  geom_segment(data = stat, 
+               aes(x = center, xend = center, 
+                   y = se_low, yend = se_high)) +
+  geom_segment(data = stat, 
+               aes(x = center - 2 * delta, 
+                   xend = center + 2 * delta, 
+                   y = se_low, yend = se_low)) +
+  geom_segment(data = stat, 
+               aes(x = center - 2 * delta, 
+                   xend = center + 2 * delta, 
+                   y = se_high, yend = se_high)) +
+  ylab(bquote("Hill's number" ~ q == 1 ~ "(" ~ phantom()^
+    {
+      1
+    } * D ~ ")")) +
+  xlab(bquote("pH" ~ "(" ~ p[value] == .(pval_pH) ~ 
+                " ; " ~ R^2 == .(R2_pH) ~ ")",
+              where = pvalR2)) +
+  theme_paper() +
+  theme(axis.title = element_text(size = 8)) -> plot_pH
+
+ggplot(data = data_diversity) +
+  geom_point(aes(y = D_1, x = Elevation, col = Site, 
+                 shape = Horizon), cex = 0.8) +
+  geom_segment(data = group_by(data_diversity, Elevation_bin) %>%
+    summarise(
+      m = mean(D_1),
+      sd = sd(D_1) / sqrt(length(D_1)),
+      low = mean(Elevation_low),
+      high = mean(Elevation_high),
+      ddl = length(D_1) - 1,
+      se_low = m + qt(0.025, ddl) * sd,
+      se_high = m + qt(0.975, ddl) * sd,
+      delta = (high - low) * 0.05,
+      center = (low + high) / 2
+    ) -> stat, aes(y = m, yend = m, x = low + delta, xend = high - delta), size = 1.5) +
+  geom_segment(data = stat, aes(x = center, 
+                                xend = center, 
+                                y = se_low, yend = se_high)) +
+  geom_segment(data = stat, aes(x = center - 2 * delta, 
+                                xend = center + 2 * delta, 
+                                y = se_low, yend = se_low)) +
+  geom_segment(data = stat, aes(x = center - 2 * delta, 
+                                xend = center + 2 * delta, 
+                                y = se_high, yend = se_high)) +
+  ylab(bquote("Hill's number" ~ q == 1 ~ "(" ~ phantom()^
+    {
+      1
+    } * D ~ ")")) +
+  xlab(bquote("Elevation" ~ "(" ~ p[value] == .(pval_Elevation) ~ 
+                " ; " ~ R^2 == .(R2_Elevation) ~ ")", 
+              where = pvalR2)) +
+  theme_paper() +
+  theme(
+    axis.title.x = element_text(size = 8),
+    axis.title.y = element_blank()
+  ) -> plot_Elevation
+
+ggplot(data = data_diversity) +
+  geom_point(aes(y = D_1, x = Nitrogen, 
+                 col = Site, shape = Horizon), cex = 0.8) +
+  geom_segment(data = group_by(data_diversity, Nitrogen_bin) %>%
+    summarise(
+      m = mean(D_1),
+      sd = sd(D_1) / sqrt(length(D_1)),
+      low = mean(Nitrogen_low),
+      high = mean(Nitrogen_high),
+      ddl = length(D_1) - 1,
+      se_low = m + qt(0.025, ddl) * sd,
+      se_high = m + qt(0.975, ddl) * sd,
+      delta = (high - low) * 0.05,
+      center = (low + high) / 2
+    ) -> stat, aes(y = m, yend = m, 
+                   x = low + delta, 
+                   xend = high - delta), size = 1.5) +
+  geom_segment(data = stat, 
+               aes(x = center, xend = center, 
+                   y = se_low, yend = se_high)) +
+  geom_segment(data = stat, 
+               aes(x = center - 2 * delta, 
+                   xend = center + 2 * delta, 
+                   y = se_low, yend = se_low)) +
+  geom_segment(data = stat, 
+               aes(x = center - 2 * delta, 
+                   xend = center + 2 * delta, 
+                   y = se_high, yend = se_high)) +
+  ylab(bquote("Hill's number" ~ q == 1 ~ "(" ~ phantom()^
+    {
+      1
+    } * D ~ ")")) +
+  xlab(bquote("Nitrogen" ~ "(" ~ p[value] == .(pval_Nitrogen) ~ " ; " 
+              ~ R^2 == .(R2_Nitrogen) ~ ")", where = pvalR2)) +
+  theme_paper() +
+  theme(axis.title = element_text(size = 8)) -> plot_Nitrogen
+
+p <- pval["cn_ratio"]
+ggplot(data = data_diversity) +
+  geom_point(aes(y = D_1, x = cn_ratio, 
+                 col = Site, shape = Horizon), cex = 0.8) +
+  geom_segment(data = group_by(data_diversity, cn_ratio_bin) %>%
+    summarise(
+      m = mean(D_1),
+      sd = sd(D_1) / sqrt(length(D_1)),
+      low = mean(cn_ratio_low),
+      high = mean(cn_ratio_high),
+      ddl = length(D_1) - 1,
+      se_low = m + qt(0.025, ddl) * sd,
+      se_high = m + qt(0.975, ddl) * sd,
+      delta = (high - low) * 0.05,
+      center = (low + high) / 2
+    ) -> stat, aes(y = m, yend = m, 
+                   x = low + delta, 
+                   xend = high - delta), size = 1.5) +
+  geom_segment(data = stat, 
+               aes(x = center, xend = center, 
+                   y = se_low, yend = se_high)) +
+  geom_segment(data = stat, 
+               aes(x = center - 2 * delta, 
+                   xend = center + 2 * delta, 
+                   y = se_low, yend = se_low)) +
+  geom_segment(data = stat, aes(x = center - 2 * delta, 
+                                xend = center + 2 * delta, 
+                                y = se_high, yend = se_high)) +
+  ylab(bquote("Hill's number" ~ q == 1 ~ "(" ~ phantom()^
+    {
+      1
+    } * D ~ ")")) +
+  xlab(bquote("C/N ratio" ~ "(" ~ p[value] == .(pval_cn_ratio) ~ " ; " ~ 
+                R^2 == .(R2_cn_ratio) ~ ")", where = pvalR2)) +
+  theme_paper() +
+  theme(
+    axis.title.x = element_text(size = 8),
+    axis.title.y = element_blank()
+  ) -> plot_cn_ratio
+
+ggarrange(NULL, plot_pH, NULL, plot_Elevation, NULL,
+  NULL, plot_Nitrogen, NULL, plot_cn_ratio, NULL,
+  widths = c(0.15, 1, 0.15, 1, 0.08),
+  ncol = 5, nrow = 2,
+  common.legend = TRUE, legend = "bottom",
+  labels = c("(A)", "", "(B)", "", "", "(C)", "", "(D)", "", "")
+)
+
+write_figure_2_cols("figure_5", height = NA)
+```
+# Description of the terrestrial Algae community
+
+## Distribution of the relative abundancies of the algae classes
+
+Detected Chlorophyta belongs four taxonomical classes:
+
+- `Pedinophyceae`
+- `Ulvophyceae`
+- `Chlorophyceae`
+- `Trebouxiophyceae`
+
+The relative abundances and diversities of these classes are estimated.
+
+```{r}
+clades <- taxonatrank(ncbi, chlo01@motus$taxid, "class", name = TRUE)
+
+t(apply(chlo01@reads, MARGIN = 1, 
+        function(x) H_q(x, q = 1, clades = clades) / H_q(x, q = 1) * 100)) %>%
+  as.data.frame() %>%
+  rownames_to_column(var = "sample") %>%
+  left_join(chlo01@samples, by = "sample") %>%
+  pivot_longer(cols = ends_with("ceae"), 
+               names_to = "Class", 
+               values_to = "Relative entropy") %>%
+  left_join(t(apply(chlo01@reads,
+    MARGIN = 1,
+    function(x) tapply(x, clades, sum) / sum(x)
+  ) * 100) %>%
+    as.data.frame() %>%
+    rownames_to_column(var = "sample") %>%
+    pivot_longer(cols = ends_with("ceae"), 
+                 names_to = "Class", 
+                 values_to = "Read frequency"),
+  by = c("sample", "Class")
+  ) %>%
+  pivot_longer(cols = c("Relative entropy", 
+                        "Read frequency"), 
+               names_to = "Measure", 
+               values_to = "Value") %>%
+  na.omit() -> relative_diversity
+```
+
+The following code produces `Figure 6`
+
+```{r fig.width=4,fig.height=3}
+relative_diversity %>%
+  filter(Measure == "Read frequency") %>%
+  mutate(
+    Class = factor(Class, levels = c(
+      "Pedinophyceae", "Ulvophyceae",
+      "Chlorophyceae", "Trebouxiophyceae"
+    )),
+    Site = site_factor(Site_short)
+  ) %>%
+  ggplot(aes(x = Site, y = Value, col = Class)) +
+  geom_boxplot(outlier.size = 1) +
+  scale_y_sqrt() +
+  xlab("Site") +
+  ylab("Chlo01 Relative read frequency (%)") +
+  theme_paper() +
+  theme(
+    legend.title = element_blank(),
+    legend.text = element_text(size = 6),
+    legend.position = "bottom",
+    legend.box = "vertical", legend.margin = margin()
+  ) +
+  guides(col = guide_legend(
+    title.position = NULL,
+    title.hjust = 0.5,
+    nrow = 2
+  ))
+
+write_figure_1_col("Figure_6")
+```
+
+The *Chlorophyta* are mainly composed of *Trebouxiophyceae* and *Chlorophyceae* with a clear superiority for *Trebouxiophyceae*. 
+
+## Impact of the environmental variables on the relative abundances of *Trebouxiophyceae* and *Chlorophyceae*
+
+THe code below produces `Figure 7`
+
+```{r}
+sub_figure_labeller <- function(labels) {
+  subfig <- LETTERS[1:length(labels)]
+  paste0("(", subfig, ")    ", labels)
+}
+
+relative_diversity %>%
+  select(`Measure`, Value, Class, Site = Site_short, pH, Elevation) %>%
+  mutate(Site = site_factor(Site)) %>%
+  filter(Class %in% c("Chlorophyceae", 
+                      "Trebouxiophyceae") & 
+           Measure == "Read frequency") %>%
+  filter(`Value` > 0) %>%
+  pivot_longer(cols = c("pH", "Elevation"), 
+               names_to = "env", 
+               values_to = "Gradient") %>%
+  mutate(env = factor(env, levels = c("pH", "Elevation"))) %>%
+  ggplot() +
+  geom_point(aes(
+    y = Value, x = Gradient,
+    shape = Class, col = Site
+  )) +
+  geom_smooth(
+    mapping = aes(
+      y = Value, x = Gradient,
+      shape = Class
+    ),
+    method = "lm", formula = y ~ x, se = FALSE
+  ) +
+  facet_grid(. ~ env,
+    scales = "free_x",
+    labeller = as_labeller(sub_figure_labeller)
+  ) +
+  xlab("Environmental gradient") +
+  ylab("Chlo01 Relative read frequency (%)") +
+  theme_paper() +
+  theme(strip.text = element_text(size = 12))
+
+write_figure_2_cols("Figure_7")
+```
+
+```{r}
+relative_diversity %>%
+  mutate(cn_ratio = Carbon / Nitrogen) %>%
+  select(sample, Measure, Value, 
+         Class, 
+         Site = Site_short, pH, Elevation) %>%
+  filter(Class == "Trebouxiophyceae") %>%
+  pivot_wider(names_from = "Measure", 
+              values_from = "Value") %>%
+  filter(`Read frequency` > 0) %>%
+  select(-sample) %>%
+  na.omit() -> data
+
+lm(`Relative entropy` ~ pH + Elevation + Site, data = data) -> ll
+
+summary(ll)
+summary(lm(`Relative entropy` ~ pH + Site, data = data))
+summary(lm(`Relative entropy` ~ Elevation + Site, data = data))
+
+
+anova(ll)
+
+anova(ll)$`Sum Sq` / sum(anova(ll)$`Sum Sq`)
+```
+
+
+## Impact of the environmental variables on the communities
+
+### Construction of the RDA modele
+
+A redoundancy analysis (RDA) is done to force alignement of Community in the space of selected variables
+
+Read count are transformed according to Hellinger method (square roots of the relative frequencies)
+
+```{r communities}
+chlo01_communities <- decostand(chlo01@reads, method = "hellinger")
+```
+
+Environmental variables are centred and scaled.
+
+```{r scaled_env}
+scaled_env <- selected_env %>%
+  scale() %>%
+  as.data.frame()
+```
+
+
+```{r chlo01_rda}
+chlo01_rda <- rda(chlo01_communities ~ . + Condition(chlo01@samples$Site_short),
+  data = scaled_env,
+  scale = FALSE
+)
+```
+
+A step forward/backward procedure is then run to select the best model.
+
+```{r  model_selection, cache=TRUE}
+ordistep(rda(chlo01_communities ~ 1 + 
+               Condition(chlo01@samples$Site_short),
+  data = scaled_env,
+  scale = FALSE
+),
+scope = formula(chlo01_rda),
+permutations = 999, trace = TRUE
+) -> chlo01_rda_selected
+```
+
+
+Every considered variables are significantly used in the model and therefore the complete model is selected.
+
+The biplot of the selected model constitutes the `Figure 8`.
+
+```{r biplot_rda, fig.height=4, fig.width=8, warning=FALSE}
+gscale <- sqrt(attributes(summary(chlo01_rda_selected))$const) / 2
+summary(chlo01_rda_selected)$site %>%
+  as.data.frame() %>%
+  rownames_to_column(var = "sample") %>%
+  left_join(chlo01@samples, by = "sample") %>%
+  mutate(
+    Environment = milieu_factor(Environment),
+    Site = site_factor(Site_short)
+  ) %>%
+  ggplot() +
+  geom_point(aes(x = RDA1, y = RDA2, 
+                 col = Site, pch = Environment)) +
+  geom_segment(
+    data = summary(chlo01_rda_selected)$biplot %>%
+      as.data.frame() %>%
+      add_rownames(var = "variable"),
+    mapping = aes(x = 0, xend = RDA1 * 
+                    gscale, y = 0, yend = RDA2 * gscale),
+    col = "black",
+    arrow = arrow(length = unit(0.10, "cm"), type = "closed")
+  ) +
+  geom_text_repel(
+    data = summary(chlo01_rda_selected)$biplot %>%
+      as.data.frame() %>%
+      add_rownames(var = "variable") %>%
+      mutate(variable = str_replace_all(variable, "`", "")),
+    mapping = aes(x = RDA1 * gscale, 
+                  y = RDA2 * gscale, 
+                  label = variable),
+    hjust = 1, vjust = 0, 
+    nudge_x = 0.1, nudge_y = 0.05, 
+    cex = 3,
+    segment.size = 0
+  ) +
+  theme_paper() -> plot_RDA_12
+
+# gscale <- sqrt(attributes(summary(chlo01_rda_selected))$const)
+
+summary(chlo01_rda_selected)$site %>%
+  as.data.frame() %>%
+  rownames_to_column(var = "sample") %>%
+  left_join(chlo01@samples, by = "sample") %>%
+  mutate(
+    Environment = milieu_factor(Environment),
+    Site = site_factor(Site_short)
+  ) %>%
+  ggplot() +
+  geom_point(aes(x = RDA3, y = RDA4, 
+                 col = Site, pch = Environment)) +
+  geom_segment(
+    data = summary(chlo01_rda_selected)$biplot %>%
+      as.data.frame() %>%
+      add_rownames(var = "variable"),
+    mapping = aes(x = 0, xend = RDA3 * gscale, 
+                  y = 0, yend = RDA4 * gscale),
+    col = "black",
+    arrow = arrow(length = unit(0.10, "cm"), type = "closed")
+  ) +
+  geom_text_repel(
+    data = summary(chlo01_rda_selected)$biplot %>%
+      as.data.frame() %>%
+      add_rownames(var = "variable"),
+    mapping = aes(x = RDA3 * gscale, 
+                  y = RDA4 * gscale, label = variable),
+    hjust = 0, vjust = 0.5, cex = 3,
+    segment.size = 0,
+    nudge_x = 0.05, nudge_y = 0.05
+  ) +
+  theme_paper() -> plot_RDA_34
+
+ggarrange(NULL, plot_RDA_12,
+  NULL, plot_RDA_34,
+  NULL,
+  ncol = 5,
+  common.legend = TRUE, legend = "bottom",
+  widths = c(0.15, 1, 0.15, 1, 0.08),
+  labels = c("(A)", "", "(B)", "", "")
+)
+
+write_figure_2_cols("Figures_8", height = 90)
+```
+
+
+### Estimation of the variance partition
+
+Variance partitionning of the community changes by the considered environmental variables is estimated.
+
+The global effect is : 
+
+```{r}
+chlo01_rda <- rda(chlo01_communities ~ . + 
+                    Condition(chlo01@samples$Site_short),
+  data = scaled_env,
+  scale = FALSE
+)
+
+chlo01_rda
+
+RsquareAdj(chlo01_rda)
+```
+
+Pure effects of each variable are estimated declaring other variables as *condition* to remove their effects
+
+- For pH
+
+```{r pH_effect}
+cov <- cbind(Site = chlo01@samples$Site_short, 
+             as.data.frame(scaled_env))
+chlo01_rda_pH <- rda(chlo01_communities ~ pH + 
+                       Condition(Site + Elevation + Nitrogen + `C/N Ratio`),
+  data = cov,
+  scale = FALSE
+)
+RsquareAdj(chlo01_rda_pH)
+```
+
+- For Elevation
+
+```{r elevation_effect}
+cov <- cbind(Site = chlo01@samples$Site_short, 
+             as.data.frame(scaled_env))
+chlo01_rda_Elev <- rda(chlo01_communities ~ Elevation + 
+                         Condition(Site + pH + Nitrogen + `C/N Ratio`),
+  data = cov,
+  scale = FALSE
+)
+RsquareAdj(chlo01_rda_Elev)
+```
+
+- For Nitrogen
+
+```{r Nitrogen_effect}
+cov <- cbind(Site = chlo01@samples$Site_short, 
+             as.data.frame(scaled_env))
+chlo01_rda_N <- rda(chlo01_communities ~ Nitrogen + 
+                      Condition(Site + pH + Elevation + `C/N Ratio`),
+  data = cov,
+  scale = FALSE
+)
+RsquareAdj(chlo01_rda_N)
+```
+
+- For C/N Ratio
+
+```{r cn_ratio_effect}
+cov <- cbind(Site = chlo01@samples$Site_short, 
+             as.data.frame(scaled_env))
+chlo01_rda_CN <- rda(chlo01_communities ~ `C/N Ratio` + 
+                       Condition(Site + pH + Elevation + Nitrogen),
+  data = cov,
+  scale = FALSE
+)
+RsquareAdj(chlo01_rda_CN)
+```
+
+Global analysis was also realized using the `Vegan` `varpart` function.
+
+```{r anova_rda}
+varpart(chlo01_communities,
+  ~pH,
+  ~Elevation,
+  ~Nitrogen,
+  ~`C/N Ratio`,
+  data = scaled_env,
+  scale = FALSE
+) -> chlo01_rda_parts
+```
+
+```{r anova_plot, fig.width=6, fig.height=4}
+par(mfrow = c(1, 2))
+
+plot(chlo01_rda_parts,
+  digit = 2, cex = 0.6, id.size = 0.5, 
+  bg = c("grey", "blue", "yellow", "red"),
+  alpha = 50,
+  Xnames = c("pH", "Elevation", "Nitrogen", "C/N ratio")
+)
+
+showvarparts(4,
+  cex = 0.6, id.size = 0.5, 
+  bg = c("grey", "blue", "yellow", "red"),
+  alpha = 50,
+  Xnames = c("pH", "Elevation", "Nitrogen", "C/N ratio")
+)
+# dev.copy(pdf, "Figures/Chlo01_RDA_var_parts.pdf")
+```
+
+ - X1 : pH       
+ - X2 : Elevation
+ - X3 : Nitrogen
+ - X4 : C/N ratio
+
+
+```{r}
+chlo01_rda_parts
+```
+
+
+
+# Heterogeneous distribution of species and genus
+
+The heterogeneous distribution of the MOTUs is studied only for MOTUs that where 
+taxonomically identified at the species or genus levels.
+
+Four gradients are investigated:
+
+- Elevation
+- pH
+- Nitrogen
+- C/N ratio
+
+## Selection of the MOTUs identified at the species and at the genus level
+
+### For species
+
+A subset of the MOTUs annotated at the species level is extracted from the global data set
+and aggregated to merge every MOTUs annotated by the same species.
+
+```{r}
+chlo01_species <- chlo01[, !is.na(chlo01@motus$species)]
+chlo01_species <- aggregate(chlo01_species,
+  MARGIN = "motus",
+  by = list(chlo01_species@motus$species_name),
+  FUN = sum
+)
+```
+
+### For genera
+
+A subset of the MOTUs annotated at the genus level is extracted from the global data set
+and aggregated to merge every MOTUs annotated by the same genus.
+
+```{r}
+chlo01_genus <- chlo01[, !is.na(chlo01@motus$genus)]
+chlo01_genus <- aggregate(chlo01_genus,
+  MARGIN = "motus",
+  by = list(chlo01_genus@motus$genus_name),
+  FUN = sum
+)
+```
+
+## Analysis of MOTUS distribution along elevation gradient
+
+### For species
+
+Distribution ranges are estimated using the `motus_gradient` defined above.
+
+```{r}
+species_elev <- niche_motus_gradient(chlo01_species, 
+                                     chlo01_species@samples$Elevation)
+```
+
+The code below produces the supplentary `Figure S3` 
+
+```{r fig.height=8,fig.width=6, warning=FALSE}
+plot_motus_gradient(
+  chlo01_species,
+  chlo01_species@samples$Elevation,
+  species_elev
+) + xlab("Elevation of the sample")
+
+write_figure_2_cols("Figure_S3", height = 270)
+```
+
+### For genera
+
+```{r}
+genus_elev <- niche_motus_gradient(chlo01_genus, 
+                                   chlo01_genus@samples$Elevation)
+```
+
+The code below produces the `Figure 9` 
+
+
+```{r fig.height=8,fig.width=6, warning=FALSE}
+plot_motus_gradient(
+  chlo01_genus,
+  chlo01_genus@samples$Elevation,
+  genus_elev
+) +
+  xlab("Elevation of the sample")
+
+write_figure_2_cols("Figure_9", height = 270)
+```
+
+## Analysis of species distribution along pH gradient
+
+### For species
+
+```{r}
+species_ph <- niche_motus_gradient(chlo01_species, 
+                                   chlo01_species@samples$pH)
+```
+
+The code below produces the supplentary `Figure S4` 
+
+```{r fig.height=8,fig.width=6, warning=FALSE}
+plot_motus_gradient(chlo01_species,
+  chlo01_species@samples$pH,
+  species_ph,
+  jitter = 0.01
+) +
+  xlab("Soil pH")
+
+write_figure_2_cols("Figure_S4", height = 270)
+```
+
+### For genera
+
+```{r}
+genus_ph <- niche_motus_gradient(chlo01_genus, 
+                                 chlo01_genus@samples$pH)
+```
+
+The code below produces the supplentary `Figure S5` 
+
+```{r fig.height=8,fig.width=6, warning=FALSE}
+plot_motus_gradient(chlo01_genus,
+  chlo01_genus@samples$pH,
+  genus_ph,
+  jitter = 0.01
+) +
+  xlab("Soil pH")
+
+write_figure_2_cols("Figure_S5", height = 270)
+```
+
+
+## Analysis of species distribution along Nitrogen gradient
+
+### For species
+
+```{r}
+species_Nitrogen <- niche_motus_gradient(chlo01_species,
+                                         chlo01_species@samples$Nitrogen)
+```
+
+The code below produces the supplentary `Figure S6` 
+
+```{r fig.height=8,fig.width=6, warning=FALSE}
+plot_motus_gradient(chlo01_species,
+  chlo01_species@samples$Nitrogen,
+  species_Nitrogen,
+  jitter = 0.01
+) +
+  xlab("Soil Nitrogen")
+
+write_figure_2_cols("Figure_S6", height = 270)
+```
+
+### For genera
+
+```{r}
+genus_Nitrogen <- niche_motus_gradient(chlo01_genus, 
+                                       chlo01_genus@samples$Nitrogen)
+```
+
+The code below produces the supplentary `Figure S7` 
+
+```{r fig.height=8,fig.width=6, warning=FALSE}
+plot_motus_gradient(chlo01_genus,
+  chlo01_genus@samples$Nitrogen,
+  genus_Nitrogen,
+  jitter = 0.01
+) +
+  xlab("Soil Nitrogen")
+
+write_figure_2_cols("Figure_S7", height = 270)
+```
+
+
+
+## Analysis of species distribution along C/N ratio gradient
+
+### For species
+
+```{r}
+species_cn_ratio <- niche_motus_gradient(
+  chlo01_species,
+  chlo01_species@samples$Carbon / chlo01_species@samples$Nitrogen
+)
+```
+
+The code below produces the supplentary `Figure S8` 
+
+```{r fig.height=8,fig.width=6, warning=FALSE}
+plot_motus_gradient(chlo01_species,
+  chlo01_species@samples$Carbon / chlo01_species@samples$Nitrogen,
+  species_cn_ratio,
+  jitter = 0.01
+) +
+  xlab("Soil C/N ratio")
+
+write_figure_2_cols("Figure_S8", height = 270)
+```
+
+### For genera
+
+```{r}
+genus_cn_ratio <- niche_motus_gradient(
+  chlo01_genus,
+  chlo01_genus@samples$Carbon / chlo01_genus@samples$Nitrogen
+)
+```
+
+The code below produces the supplentary `Figure S9` 
+
+```{r fig.height=8,fig.width=6, warning=FALSE}
+plot_motus_gradient(chlo01_genus,
+  chlo01_genus@samples$Carbon / chlo01_genus@samples$Nitrogen,
+  genus_cn_ratio,
+  jitter = 0.01
+) +
+  xlab("Soil C/N ratio")
+
+write_figure_2_cols("Figure_S9", height = 270)
+```
+
+## Global analysis of the niche following the for variable
+
+A delimitation of the niche for the species and genus levels MOTUs, considering the four environmental variables, is computed. 
+
+```{r}
+env_var <- tibble(
+  Elevation = chlo01_genus@samples$Elevation,
+  pH = chlo01_genus@samples$pH,
+  Nitrogen = chlo01_genus@samples$Nitrogen,
+  `CN Ratio` = chlo01_genus@samples$Carbon / chlo01_genus@samples$Nitrogen
+)
+
+
+env_var_pca <- dudi.pca(env_var, scannf = FALSE)
+
+niche_species <- niche(env_var_pca,
+  as.data.frame(decostand(chlo01_species@reads, method = "total")),
+  scannf = FALSE
+)
+niche_genus <- niche(env_var_pca,
+  as.data.frame(decostand(chlo01_genus@reads, method = "total")),
+  scannf = FALSE
+)
+
+niche_species_tests <- rtest_niche(niche_species, nrepet = 999)
+niche_genus_tests <- rtest_niche(niche_genus, nrepet = 999)
+```
+
+Specialized MOTUs, are selected based on the `rtest_niche` function.
+
+```{r}
+niche_barycenter_species <- sweep(sweep(niche_species$tab,
+  MARGIN = 2,
+  STATS = apply(env_var, 2, sd), "*"
+),
+MARGIN = 2,
+STATS = apply(env_var, 2, mean), "+"
+) %>%
+  mutate(
+    name = names(niche_species_tests)[1:nrow(niche_species$tab)],
+    class = chlo01_species@motus$class,
+    pval = niche_species_tests,
+    `taxonomic rank` = "species"
+  ) %>%
+  filter(p.adjust(pval, method = "fdr") < 0.05)
+
+niche_barycenter_genus <- sweep(sweep(niche_genus$tab,
+  MARGIN = 2,
+  STATS = apply(env_var, 2, sd), "*"
+),
+MARGIN = 2,
+STATS = apply(env_var, 2, mean), "+"
+) %>%
+  mutate(
+    name = names(niche_genus_tests)[1:nrow(niche_genus$tab)],
+    class = chlo01_genus@motus$class,
+    pval = niche_genus_tests,
+    `taxonomic rank` = "genus"
+  ) %>%
+  filter(p.adjust(pval, method = "fdr") < 0.05)
+
+niche_barycenter_species %>% 
+  bind_rows(niche_barycenter_genus) -> niche_barycenter
+niche_barycenter
+```
+
+A principal correspondance analysis on the niche center is
+realized to compare them.
+
+```{r}
+niche_barycenter %>%
+  select(Elevation, pH, Nitrogen, `CN Ratio`) %>%
+  dudi.pca(scannf = FALSE) -> niches_pca
+```
+
+The code below produces the `Figure 10` 
+
+
+```{r}
+niches_pca %>%
+  factoextra::fviz_pca_biplot(
+    repel = TRUE, labelsize = 2,
+    pointsize = 0.5, title = "",
+    col.ind = niche_barycenter$class,
+    addEllipses = FALSE,
+  ) +
+  theme(
+    axis.title = element_text(size = 8),
+    axis.text = element_text(size = 8),
+    legend.position = "bottom",
+    legend.text = element_text(size = 8),
+    legend.title = element_blank()
+  ) + guides(col = guide_legend(
+    title.position = NULL,
+    title.hjust = 0.5,
+    nrow = 2
+  ))
+
+write_figure_1_col("Figure_10", height = NA)
+```
+
+We endly test the non-homogeneous representation of *Chlorophyceae* and *Trebouxiophyceae* along of the first axis.
+
+```{r}
+wilcox.test(niches_pca$li[niche_barycenter$class %in% 
+                            c("Chlorophyceae", "Trebouxiophyceae"), 1] ~
+              (niche_barycenter$class[niche_barycenter$clas %in% 
+                                        c("Chlorophyceae", 
+                                          "Trebouxiophyceae")]))
+```
