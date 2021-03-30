@@ -1,6 +1,8 @@
 # RStudio project describing the data processing of the Alpalga Zonation manuscript
 
+An overview of the data, scripts, and results can be consulted at the following address
 
+<center>https://alpalga.github.io/Zonation/</center>
 
 ## Directory contents
 
