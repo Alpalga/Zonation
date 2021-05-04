@@ -2676,12 +2676,13 @@ niche_barycenter %>%
 The code below produces the `Figure 10` 
 
 
-```{r fig.width=6, fig.height=6}
+```{r fig.width=4, fig.height=4}
 niches_pca %>%
   fviz_pca_biplot(
-    repel = TRUE, labelsize = 1,
+    repel = TRUE, labelsize = 2,
     pointsize = 0.5, title = "",
     col.ind = niche_barycenter$class,
+    col.var = "black",
     addEllipses = FALSE,
   ) +
   theme(
