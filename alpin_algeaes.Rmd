@@ -2077,7 +2077,7 @@ summary(chlo01_rda_selected)$site %>%
                names(r2_rda)[2], r2_rda[2] * 100)) +
   theme_paper()
 
-write_figure_1_col("Figures_8", height = 90)
+write_figure_1_col("Figure_8", height = 90)
 ```
 
 
