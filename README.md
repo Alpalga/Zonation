@@ -10,8 +10,13 @@ An overview of the data, scripts, and results can be consulted at the following 
 
 #### Sites metadata
 
-- orchamp_env.csv : Environmental measures describing the sampling sites
-- label_metabar_trie.csv : 
+- `orchamp_env.csv` : Environmental measures describing the sampling sites
+- `label_metabar_trie.csv` : Metadata describing the sampling location.
+
+#### Bioclimatic data
+
+- `climatic_only2016.Rdata` : the estimated bioclimatic variable used for the ecological 
+                  analysis
 
 #### EMBL release 140 related data  
 
@@ -24,6 +29,7 @@ pushd embl-140
 gunzip *
 popd
 ```
+
 
 #### The curated data sets
 
@@ -47,8 +53,19 @@ They are all coma separated values files (.csv)
 
 #### Raw data
 
-Only raw data statistics are available for each markers.
-The complete raw data are too big to fit on GitHub.
+The complete raw data are too large to be placed on GitHub, and cannot be easily deposited on the SRA servers because many samples are multiplexed in each sequencing library. Files containing the most possible raw data were produced from the raw sequencing files and uploaded to the GitHub server. They consist of three fasta files annotated following the *OBITools* format. The three steps of processing that allowed their construction are : 
+
+- The initial forward and reverse files were assembled by `illuminapairedends`
+- The resulting file was dereplicated using `obiuniq`
+- The sequences appearing only once in the whole experiment (singletons) were discarded using `obigrep`.
+  
+The three *almost* raw data sequence files compressed by bzip2 are stored in the directory corresponding to each marker:
+
+- `chlo01.no_singleton.fasta.bz`
+- `chlo02.no_singleton.fasta.bz`
+- `euka03.no_singleton.fasta.bz`
+
+Raw data statistics are available for each markers.
 
 - `chlo01`
   + `chlo01.length.stat` : stats on the amplicon lenght
